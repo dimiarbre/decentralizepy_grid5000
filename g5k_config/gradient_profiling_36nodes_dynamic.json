@@ -1,0 +1,14 @@
+{
+    "job_name": "evaluating_decentralizepy",
+    "walltime": "5:00:00",
+    "GRAPH_FILE": "36regular_4degree.edges",
+    "NB_AGENTS": 36,
+    "NB_MACHINE":2,
+    "NB_ITERATION" :3000,
+    "EVAL_FILE" :"testingPeerSamplerDynamic.py",
+    "TEST_AFTER" :5,
+    "LOG_LEVEL" :"INFO",
+    "CONFIG_NAME" :"only_training_gaussiannoise.ini",
+    "cluster" : "paravance",
+    "LOCAL_SAVE_DIR" : "results/my_results"
+}

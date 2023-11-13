@@ -1,0 +1,15 @@
+{
+    "job_name": "femnist_128nodes_static_muffliato_2th_10steps_CNN",
+    "walltime": "9:30:00",
+    "GRAPH_FILE": "128nodes_6degree.edges",
+    "NB_AGENTS": 128,
+    "NB_MACHINE":8,
+    "NB_ITERATION" : 4000,
+    "EVAL_FILE" :"testingPeerSampler.py",
+    "TEST_AFTER" :50,
+    "LOG_LEVEL" :"INFO",
+    "CONFIG_NAME" :"mia_config_femnist_muffliato.ini",
+    "cluster" : "paravance",
+    "LOCAL_SAVE_DIR" : "results/my_results/femnist/128nodes_CNN",
+    "AVERAGING_STEPS" : 10
+}

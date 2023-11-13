@@ -1,0 +1,14 @@
+{
+    "job_name": "128nodes_static_gaussian_2th",
+    "walltime": "3:00:00",
+    "GRAPH_FILE": "128nodes_6degree.edges",
+    "NB_AGENTS": 128,
+    "NB_MACHINE":8,
+    "NB_ITERATION" : 4000,
+    "EVAL_FILE" :"testingPeerSampler.py",
+    "TEST_AFTER" :10,
+    "LOG_LEVEL" :"INFO",
+    "CONFIG_NAME" :"mia_config_cifar10_gaussiannoise.ini",
+    "cluster" : "paravance",
+    "LOCAL_SAVE_DIR" : "results/my_results/"
+}

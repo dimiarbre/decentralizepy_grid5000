@@ -1,0 +1,14 @@
+{
+    "job_name": "decentralizepy_test",
+    "walltime": "1:30:00",
+    "GRAPH_FILE": "6_star.edges",
+    "NB_AGENTS": 6,
+    "NB_MACHINE":1,
+    "NB_ITERATION" :100,
+    "EVAL_FILE" :"testingPeerSampler.py",
+    "TEST_AFTER" :5,
+    "LOG_LEVEL" : "DEBUG",
+    "CONFIG_NAME" : "mia_config_cifar10_gaussiannoise.ini",
+    "cluster" : "paravance",
+    "LOCAL_SAVE_DIR" : "results/my_results"
+}

@@ -1,0 +1,14 @@
+{
+    "job_name": "dynamic_muffliato_niidattacks",
+    "walltime": "4:30:00",
+    "GRAPH_FILE": "36regular_4degree.edges",
+    "NB_AGENTS": 36,
+    "NB_MACHINE":3,
+    "NB_ITERATION" : 4000,
+    "EVAL_FILE" :"testingPeerSamplerDynamic.py",
+    "TEST_AFTER" :10,
+    "LOG_LEVEL" :"INFO",
+    "CONFIG_NAME" :"mia_config_cifar10_muffliato.ini",
+    "cluster" : "paravance",
+    "LOCAL_SAVE_DIR" : "results/my_results"
+}

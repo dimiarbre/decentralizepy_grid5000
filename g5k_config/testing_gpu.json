@@ -1,0 +1,14 @@
+{
+    "job_name": "decentralizepy_gpu_implem",
+    "walltime": "2:00:00",
+    "GRAPH_FILE": "1_node_small_test.edges",
+    "NB_AGENTS": 1,
+    "NB_MACHINE":1,
+    "NB_ITERATION" :10,
+    "EVAL_FILE" :"testingPeerSampler.py",
+    "TEST_AFTER" :5,
+    "LOG_LEVEL" : "INFO",
+    "CONFIG_NAME" : "mia_config_cifar10_gaussiannoise.ini",
+    "cluster" : "chifflot",
+    "LOCAL_SAVE_DIR" : "results/my_results/"
+}

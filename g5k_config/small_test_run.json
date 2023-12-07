@@ -1,15 +1,15 @@
 {
-    "job_name": "decentralizepy_test_femnist",
+    "job_name": "decentralizepy_test_framework_updated",
     "walltime": "1:30:00",
     "GRAPH_FILE": "4_node_ring.edges",
     "NB_AGENTS": 4,
     "NB_MACHINE":1,
     "NB_ITERATION" :100,
-    "EVAL_FILE" :"testingPeerSampler.py",
+    "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",
     "TEST_AFTER" :50,
     "LOG_LEVEL" : "DEBUG",
-    "CONFIG_NAME" : "mia_config_femnist_zerosumnoise.ini",
+    "CONFIG_NAME" : "only_training_nonoise.ini",
     "cluster" : "paravance",
-    "LOCAL_SAVE_DIR" : "results/my_results/test_femnist/",
-    "AVERAGING_STEPS" : 1
+    "LOCAL_SAVE_DIR" : "results/my_results/test/",
+    "AVERAGING_STEPS" : 10
 }

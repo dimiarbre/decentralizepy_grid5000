@@ -22,7 +22,7 @@ elif len(args) == 2:
 
 else:
     g5k_config_path = args[1]
-    if args[2] in ["DEBUG", "Debug"]:
+    if args[2] in ["DEBUG", "Debug","debug"]:
         debug = True
     else :
         debug = False
@@ -61,7 +61,7 @@ extra_time = "00:10:00"
 real_walltime = add_times(walltime,extra_time)
 
 NB_PROC_PER_MACHINE = NB_AGENTS//NB_MACHINE
-CONFIG_FILE = "decentralizepy/run_configuration/"+CONFIG_NAME
+CONFIG_FILE = "run_configuration/"+CONFIG_NAME
 
 
 with open(CONFIG_FILE) as config:
@@ -101,7 +101,7 @@ print(f"Job ID : {job_id}")
 
 SINGULARITY = "/grid5000/spack/v1/opt/spack/linux-debian11-x86_64_v2/gcc-10.4.0/singularity-3.8.7-rv6m5rw2bda5vu5cb7kcw6jfjg24xp6h/bin/singularity"
 REMOTE_SCRATCH_DIR="/home/dlereverend/scratch"
-REMOTE_INPUT_DIR = REMOTE_SCRATCH_DIR+"/private-averaging"
+REMOTE_INPUT_DIR = REMOTE_SCRATCH_DIR+"/decentralizepy_grid5000"
 REMOTE_DECENTRALIZEPY_DIR=REMOTE_INPUT_DIR+"/decentralizepy" 
 REMOTE_LOGS_DIR = "/tmp/logs" #TODO: Change to be able to obtain the results
 REMOTE_DATASET_DIR="/home/dlereverend/datasets"
@@ -223,6 +223,7 @@ def clear_results():
     provider.destroy()
 
 print(f"Current job ID : {job_id}")
+print(f"Debugging to {debug}, NB_MACHINE to {NB_MACHINE}")
 if not debug or (debug and NB_MACHINE>1) :
     target_walltime_sec = to_sec(walltime)
     t0 = time.time()

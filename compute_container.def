@@ -1,5 +1,6 @@
 Bootstrap: docker
-From: tensorflow/tensorflow:2.10.1-gpu
+From: ubuntu:22.04
+# From: tensorflow/tensorflow:2.10.1-gpu
 
 %files
     decentralizepy
@@ -10,15 +11,11 @@ From: tensorflow/tensorflow:2.10.1-gpu
     mkdir /datasets
     mkdir /privacy_datasets
     apt-get -y update
-    # apt-get -y install curl
-    # curl https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o Miniconda3-latest-Linux-x86_64.sh
-    # # source ~/.bashrc
-    # sh -c $(source ~/.bashrc; conda create --name tf python=3.8)
     apt-get -y install pip
     pip3 install --upgrade pip
 
     cd decentralizepy
-    pip3 install -r requirements_privacy.txt
+    # pip3 install -r requirements_privacy.txt
     pip3 install --editable .    
 
 
@@ -32,13 +29,13 @@ From: tensorflow/tensorflow:2.10.1-gpu
     echo "Running contained script"
     echo "Arguments received: $*"
     set -x
-    
+
 
     env_python=python3
-    
+
     original_config=/logs/config.ini
     decpy_path=/decentralizepy/eval
-    
+
     cd $decpy_path
 
 
@@ -56,9 +53,9 @@ From: tensorflow/tensorflow:2.10.1-gpu
     test_after=$6
     log_level=$7
 
-    averaging_steps=$8
+    averaging_rounds=$8
 
-    #Obtain the IP address
+    # Obtain the IP address
     m=`cat $(grep addresses_filepath $original_config | awk '{print $3}') | grep \"$(hostname -I| awk '{print $1;}')\" | cut -d'"' -f2`
 
     echo M is "$m"
@@ -71,5 +68,4 @@ From: tensorflow/tensorflow:2.10.1-gpu
     # TODO : remove this copy, as the g5k script already puts the config file to the temp directory? 
     config_file=/tmp/config.ini
     cp $original_config $config_file
-    # echo "alpha = 0.10" >> $config_file
-    $env_python $eval_file -ro 0 -tea $test_after -ld $log_dir -mid $m -ps $procs_per_machine -ms $machines -is $iterations -gf $graph -ta $test_after -cf $config_file -ll $log_level -ctr 0 -cte 0 -wsd $log_dir --averaging_steps $averaging_steps
+    $env_python $eval_file -ro 0 -tea $test_after -ld $log_dir -mid $m -ps $procs_per_machine -ms $machines -is $iterations -gf $graph -ta $test_after -cf $config_file -ll $log_level -wsd $log_dir --averaging_rounds $averaging_rounds

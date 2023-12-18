@@ -1,67 +1,75 @@
-import logging
-from pathlib import Path
 import json
-import enoslib as en
-import sys
+import logging
 import subprocess
+import sys
 import time
-from utils import *
+from pathlib import Path
 
+import enoslib as en
+
+from utils import *
 
 args = sys.argv
 
 
-if len(args)<2:
-    g5k_config_path = "small_test_run.json"
-    print(f"Using default config \"{g5k_config_path}\" as no arg (or too much args) was provided. Setting to debug mode")
-    g5k_config_path = "g5k_config/"+g5k_config_path
-    debug= True
+if len(args) < 2:
+    G5K_CONFIG_PATH = "small_test_run.json"
+    print(
+        f'Using default config "{G5K_CONFIG_PATH}" as no arg (or too much args) was provided.'
+        + "Setting to debug mode"
+    )
+    G5K_CONFIG_PATH = "g5k_config/" + G5K_CONFIG_PATH
+    DEBUG = True
 elif len(args) == 2:
-    g5k_config_path = args[1]
-    debug = False
+    G5K_CONFIG_PATH = args[1]
+    DEBUG = False
 
 else:
-    g5k_config_path = args[1]
-    if args[2] in ["DEBUG", "Debug","debug"]:
-        debug = True
-    else :
-        debug = False
-    
-print(f"Debugging is set to {debug}!")
+    G5K_CONFIG_PATH = args[1]
+    if args[2] in ["DEBUG", "Debug", "debug"]:
+        DEBUG = True
+    else:
+        DEBUG = False
+
+print(f"Debugging is set to {DEBUG}!")
 
 
-with open(g5k_config_path,'r') as g5k_config_file:
+with open(G5K_CONFIG_PATH, "r") as g5k_config_file:
     g5k_config = json.load(g5k_config_file)
 
-print(json.dumps(g5k_config,indent=8))
+print(json.dumps(g5k_config, indent=8))
 
-job_name        = g5k_config["job_name"]
-walltime        = g5k_config["walltime"]
-GRAPH_FILE      = g5k_config["GRAPH_FILE"]
-NB_AGENTS       = g5k_config["NB_AGENTS"] # Must be divisible by NB_MACHINE!
-NB_MACHINE      = g5k_config["NB_MACHINE"]
-NB_ITERATION    = g5k_config["NB_ITERATION"]
-EVAL_FILE       = g5k_config["EVAL_FILE"]
-TEST_AFTER      = g5k_config["TEST_AFTER"]
-LOG_LEVEL       = g5k_config["LOG_LEVEL"]
-CONFIG_NAME     = g5k_config["CONFIG_NAME"]
-cluster         = g5k_config["cluster"]
-LOCAL_SAVE_DIR  = g5k_config["LOCAL_SAVE_DIR"]
+job_name = g5k_config["job_name"]
+walltime = g5k_config["walltime"]
+GRAPH_FILE = g5k_config["GRAPH_FILE"]
+NB_AGENTS = g5k_config["NB_AGENTS"]  # Must be divisible by NB_MACHINE!
+NB_MACHINE = g5k_config["NB_MACHINE"]
+NB_ITERATION = g5k_config["NB_ITERATION"]
+EVAL_FILE = g5k_config["EVAL_FILE"]
+TEST_AFTER = g5k_config["TEST_AFTER"]
+LOG_LEVEL = g5k_config["LOG_LEVEL"]
+CONFIG_NAME = g5k_config["CONFIG_NAME"]
+cluster = g5k_config["cluster"]
+LOCAL_SAVE_DIR = g5k_config["LOCAL_SAVE_DIR"]
 if "AVERAGING_STEPS" in g5k_config.keys():
     AVERAGING_STEPS = g5k_config["AVERAGING_STEPS"]
 else:
-    AVERAGING_STEPS = 1 
+    AVERAGING_STEPS = 1
 if "DOWNLOAD_ALL" in g5k_config.keys():
-    DOWNLOAD_ALL = (g5k_config["DOWNLOAD_ALL"] == "True") 
+    DOWNLOAD_ALL = g5k_config["DOWNLOAD_ALL"] == "True"
 else:
     DOWNLOAD_ALL = False
 
 
 extra_time = "00:10:00"
-real_walltime = add_times(walltime,extra_time)
+real_walltime = add_times(walltime, extra_time)
 
-NB_PROC_PER_MACHINE = NB_AGENTS//NB_MACHINE
-CONFIG_FILE = "run_configuration/"+CONFIG_NAME
+# TODO: automatically detect the closest we can be, and give less agents to the last machine.
+assert (
+    NB_AGENTS % NB_MACHINE == 0
+), f"Invalid number of agent {NB_AGENTS} for the number of machines {NB_MACHINE}, as the correct number is not computed dynamically"
+NB_PROC_PER_MACHINE = NB_AGENTS // NB_MACHINE
+CONFIG_FILE = "run_configuration/" + CONFIG_NAME
 
 
 with open(CONFIG_FILE) as config:
@@ -76,84 +84,84 @@ en.check()
 conf = (
     # en.G5kConf.from_settings(job_name=job_name, walltime=real_walltime, job_type=["exotic"])
     en.G5kConf.from_settings(job_name=job_name, walltime=real_walltime)
-    .add_machine(
-        roles=["head"], cluster=cluster, nodes=1
-    )
+    .add_machine(roles=["head"], cluster=cluster, nodes=1)
     .add_machine(
         roles=["agent"],
         cluster=cluster,
-        nodes=NB_MACHINE-1,
+        nodes=NB_MACHINE - 1,
     )
 )
 
 provider = en.G5k(conf)
 roles, networks = provider.init()
 
-cpu_info=en.run_command("lscpu; cat /proc/cpuinfo", roles=roles)
+cpu_info = en.run_command("lscpu; cat /proc/cpuinfo", roles=roles)
 
-#Install glances for profiling
-result=en.run_command("sudo-g5k apt install -y glances",roles=roles)
+# Install glances for profiling
+result = en.run_command("sudo-g5k apt install -y glances", roles=roles)
 
-result=en.run_command("echo $OAR_JOB_ID",roles=roles["head"])
-job_id=result[0].stdout
+result = en.run_command("echo $OAR_JOB_ID", roles=roles["head"])
+job_id = result[0].stdout
 print(f"Job ID : {job_id}")
 
 
 SINGULARITY = "/grid5000/spack/v1/opt/spack/linux-debian11-x86_64_v2/gcc-10.4.0/singularity-3.8.7-rv6m5rw2bda5vu5cb7kcw6jfjg24xp6h/bin/singularity"
-REMOTE_SCRATCH_DIR="/home/dlereverend/scratch"
-REMOTE_INPUT_DIR = REMOTE_SCRATCH_DIR+"/decentralizepy_grid5000"
-REMOTE_DECENTRALIZEPY_DIR=REMOTE_INPUT_DIR+"/decentralizepy" 
-REMOTE_LOGS_DIR = "/tmp/logs" #TODO: Change to be able to obtain the results
-REMOTE_DATASET_DIR="/home/dlereverend/datasets"
-CONTAINER_FILE=REMOTE_INPUT_DIR+"/compute_container.sif"
+REMOTE_SCRATCH_DIR = "/home/dlereverend/scratch"
+REMOTE_INPUT_DIR = REMOTE_SCRATCH_DIR + "/decentralizepy_grid5000"
+REMOTE_DECENTRALIZEPY_DIR = REMOTE_INPUT_DIR + "/decentralizepy"
+REMOTE_LOGS_DIR = "/tmp/logs"
+REMOTE_DATASET_DIR = "/home/dlereverend/datasets"
+CONTAINER_FILE = REMOTE_INPUT_DIR + "/compute_container.sif"
 RUN_FOLDER_NAME = f"{job_id}_{job_name}"
-REMOTE_RESULT_DIR=REMOTE_SCRATCH_DIR+f"/results/{RUN_FOLDER_NAME}"
+REMOTE_RESULT_DIR = REMOTE_SCRATCH_DIR + f"/results/{RUN_FOLDER_NAME}"
 
 
-singularity_version = en.run_command(f"{SINGULARITY} --version", roles = roles)
+singularity_version = en.run_command(f"{SINGULARITY} --version", roles=roles)
 
-#TODO: change this for when several concurrent jobs are running : one for each job. 
-# But shouldn't be a problem since we have different nodes entirely using enoslib. 
-REMOTE_PRIVACY_DATASETS_DIR="/tmp/privacy" 
-REMOTE_IP_FILE=REMOTE_LOGS_DIR+"/ip.json"
+# TODO: change this for when several concurrent jobs are running : one for each job.
+# But shouldn't be a problem since we have different nodes entirely using enoslib.
+REMOTE_PRIVACY_DATASETS_DIR = "/tmp/privacy"
+REMOTE_IP_FILE = REMOTE_LOGS_DIR + "/ip.json"
 
-print(f"--------Creating all the necessary directories--------")
+print("--------Creating all the necessary directories--------")
 with en.actions(roles=roles) as a:
     a.file(path=REMOTE_LOGS_DIR, state="directory")
     a.file(path=REMOTE_PRIVACY_DATASETS_DIR, state="directory")
     a.file(path=REMOTE_DATASET_DIR, state="directory")
 
-#Setup the config file.
-result = en.run_command(f"echo \"{config_content}\">{REMOTE_LOGS_DIR}/config.ini",roles =roles)
+# Setup the config file.
+result = en.run_command(
+    f'echo "{config_content}">{REMOTE_LOGS_DIR}/config.ini', roles=roles
+)
 
-#result = en.run_command(f"{SINGULARITY} --help", roles=roles)
+# result = en.run_command(f"{SINGULARITY} --help", roles=roles)
 
 # roles = en.sync_info(roles, networks)
 
-print(f"--------Creating IP file---------")
+print("--------Creating IP file---------")
 
-hostname_results = en.run_command("hostname -I| awk '{print $1;}'", roles= roles)
+hostname_results = en.run_command("hostname -I| awk '{print $1;}'", roles=roles)
 
 ip_file_content = "{"
 
-for id_machine,result in enumerate(hostname_results):
+for id_machine, result in enumerate(hostname_results):
     ip_addr = result.stdout
     if id_machine == 0:
-        ip_file_content += f"\n\t\"{id_machine}\":\"{ip_addr}\""
+        ip_file_content += f'\n\t"{id_machine}":"{ip_addr}"'
     else:
-        ip_file_content += f",\n\t\"{id_machine}\":\"{ip_addr}\""
+        ip_file_content += f',\n\t"{id_machine}":"{ip_addr}"'
 
 # h = roles["head"][0]
 # for j,addr in enumerate(h.filter_addresses(networks["prod"])): #To deal with multiple ip addresses in a single node?
 #     ip_addr =  addr.ip.ip
 #     print(f"Got ip address {addr.ip}")
 #     if j==0: # The first line:
-        
+
 
 # id_machine +=1
 
 # for h in roles["agent"]:
-#     for j,addr in enumerate(h.filter_addresses(networks["prod"])): #To deal with multiple ip addresses in a 
+#     for j,addr in enumerate(h.filter_addresses(networks["prod"])): #To deal with multiple ip addresses in a
 #         ip_addr =  addr.ip.ip
 #         ip_file_content += f",\n\t\"{id_machine}\":\"{ip_addr}\""
 #     id_machine +=1
@@ -161,89 +169,126 @@ for id_machine,result in enumerate(hostname_results):
 ip_file_content += "\n}"
 print(ip_file_content)
 
-#TODO: change to accomodate for several jobs?
-result = en.run_command(f"echo \'{ip_file_content}\'>{REMOTE_IP_FILE}",roles =roles)
+# TODO: change to accomodate for several jobs?
+result = en.run_command(f"echo '{ip_file_content}'>{REMOTE_IP_FILE}", roles=roles)
 
 # Launching job on each machine:
-text_command = f"{SINGULARITY} run --bind {REMOTE_DATASET_DIR}:/datasets " + \
-                    f"--bind {REMOTE_DECENTRALIZEPY_DIR}:/decentralizepy "+ \
-                    f"--bind {REMOTE_LOGS_DIR}:/logs "+ \
-                    f"--bind {REMOTE_IP_FILE}:/ip.json "+ \
-                    f"--bind {REMOTE_PRIVACY_DATASETS_DIR}:/privacy_datasets " + \
-                    f"{CONTAINER_FILE} {GRAPH_FILE} {NB_MACHINE} {NB_PROC_PER_MACHINE} {NB_ITERATION} {EVAL_FILE} {TEST_AFTER} {LOG_LEVEL} {AVERAGING_STEPS}"
-
+text_command = (
+    f"{SINGULARITY} run --bind {REMOTE_DATASET_DIR}:/datasets "
+    + f"--bind {REMOTE_DECENTRALIZEPY_DIR}:/decentralizepy "
+    + f"--bind {REMOTE_LOGS_DIR}:/logs "
+    + f"--bind {REMOTE_IP_FILE}:/ip.json "
+    + f"--bind {REMOTE_PRIVACY_DATASETS_DIR}:/privacy_datasets "
+    + f"{CONTAINER_FILE} {GRAPH_FILE} {NB_MACHINE} {NB_PROC_PER_MACHINE} {NB_ITERATION} {EVAL_FILE} {TEST_AFTER} {LOG_LEVEL} {AVERAGING_STEPS}"
+)
 
 
 def save_results():
-    #Saves the results on the g5k global storage
-    print('-'*20 + 'saving results, discarding logs' + '-'*20)
+    # Saves the results on the g5k global storage
+    print("-" * 20 + "saving results, discarding logs" + "-" * 20)
     with en.actions(roles=roles) as a:
-        a.file(path=REMOTE_RESULT_DIR,state="directory")
+        a.file(path=REMOTE_RESULT_DIR, state="directory")
 
-    #Backup the logs to main g5k storage
-    result=en.run_command(f"rsync -Crvz {REMOTE_LOGS_DIR}/* {REMOTE_RESULT_DIR}/",roles=roles["head"])
-    result=en.run_command(f"rsync -Crvz --exclude \"ip.json\" --exclude \"*.ini\"  {REMOTE_LOGS_DIR}/* {REMOTE_RESULT_DIR}/",roles=roles["agent"])
+    # Backup the logs to main g5k storage
+    result = en.run_command(
+        f"rsync -Crvz {REMOTE_LOGS_DIR}/* {REMOTE_RESULT_DIR}/", roles=roles["head"]
+    )
+    result = en.run_command(
+        f'rsync -Crvz --exclude "ip.json" --exclude "*.ini"  {REMOTE_LOGS_DIR}/* {REMOTE_RESULT_DIR}/',
+        roles=roles["agent"],
+    )
 
-    #Copy and save the g5k config to the logs:
-    result= en.run_command(f"echo \'{json.dumps(g5k_config,indent=8)}\'>{REMOTE_RESULT_DIR}/g5k_config.json",roles = roles["head"][0])
+    # Copy and save the g5k config to the logs:
+    result = en.run_command(
+        f"echo '{json.dumps(g5k_config,indent=8)}'>{REMOTE_RESULT_DIR}/g5k_config.json",
+        roles=roles["head"][0],
+    )
 
 
 def download_results(download_logs=False):
     # Download the results locally
-    #TODO : This only works for clusters in Rennes, check how to generalize to other clusters?
-    result = subprocess.run(["rsync", "-avzP","--exclude", "**.log", "--exclude", "**.png", f"rennes.g5k:{REMOTE_RESULT_DIR}", f"{LOCAL_SAVE_DIR}"], stderr=subprocess.PIPE, text=True)
-    print(result.stderr)
+    # TODO : This only works for clusters in Rennes, check how to generalize to other clusters?
+    result_main_download = subprocess.run(
+        [
+            "rsync",
+            "-avzP",
+            "--exclude",
+            "**.log",
+            "--exclude",
+            "**.png",
+            f"rennes.g5k:{REMOTE_RESULT_DIR}",  # TODO: change this to run on another site
+            f"{LOCAL_SAVE_DIR}",
+        ],
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    print(result_main_download.stderr)
 
     # Also download the logs. We want to download the results first in case of a problem
     if download_logs:
-        result = subprocess.run(["rsync", "-avzP", f"rennes.g5k:{REMOTE_RESULT_DIR}", f"{LOCAL_SAVE_DIR}"], stderr=subprocess.PIPE, text=True)
-        print(result.stderr)
+        result_logs_download = subprocess.run(
+            [
+                "rsync",
+                "-avzP",
+                f"rennes.g5k:{REMOTE_RESULT_DIR}",  # TODO: change this to run on another site
+                f"{LOCAL_SAVE_DIR}",
+            ],
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        print(result_logs_download.stderr)
+        return result_main_download.returncode == 0 and result_logs_download == 0
     # Return True if the download was a success
-    return result.returncode == 0
+    return result_main_download.returncode == 0
+
 
 def clear_results():
-    #Remove the results from the g5k storage, be sure to call "download_results" before this
+    """Remove the results from the g5k storage, be sure to call "download_results" before this"""
     print("Clearing remote logs")
-    
     # Obtain a small job
-    conf = (
-        en.G5kConf.from_settings(job_name=job_name + "_cleanup", walltime="00:05:00")
-        .add_machine(
-            roles=["head"], cluster=cluster, nodes=1
-            )
-    )
-    provider = en.G5k(conf)
-    roles, networks = provider.init()
+    cleaning_conf = en.G5kConf.from_settings(
+        job_name=job_name + "_cleanup", walltime="00:05:00"
+    ).add_machine(roles=["head"], cluster=cluster, nodes=1)
+    cleaning_provider = en.G5k(cleaning_conf)
+    cleaning_roles, _ = cleaning_provider.init()
 
     # Delete the results
-    result = en.run_command(f"rm -rf {REMOTE_RESULT_DIR}", roles = roles["head"])
+    cleaning_result = en.run_command(f"rm -rf {REMOTE_RESULT_DIR}", roles=cleaning_roles["head"])
 
-    print(result)
+    print(cleaning_result)
 
-    provider.destroy()
+    cleaning_provider.destroy()
+    return
+
 
 print(f"Current job ID : {job_id}")
-print(f"Debugging to {debug}, NB_MACHINE to {NB_MACHINE}")
-if not debug or (debug and NB_MACHINE>1) :
+print(f"Debugging to {DEBUG}, NB_MACHINE to {NB_MACHINE}")
+if not DEBUG or (DEBUG and NB_MACHINE > 1):
     target_walltime_sec = to_sec(walltime)
     t0 = time.time()
-    main_result = en.run_command(text_command, roles=roles,asynch=target_walltime_sec,poll = 5*60)
+    main_result = en.run_command(
+        text_command, roles=roles, asynch=target_walltime_sec, poll=5 * 60
+    )
     t1 = time.time()
 
     save_results()
 
-    #Free the ressource
+    # Free the ressource
     provider.destroy()
 
     download_success = download_results(download_logs=DOWNLOAD_ALL)
 
     if download_success:
-        #Successfully pulled all the files, then delete everything to clear space on g5k
+        # Successfully pulled all the files, then delete everything to clear space on g5k
         clear_results()
 
-    print(f"Job finished normally and was deleted, main command took {(t1-t0)/(60*60):.2f} hours to run.")
+    print(
+        f"Job finished normally and was deleted, main command took {(t1-t0)/(60*60):.2f} hours to run."
+    )
 
-else: 
+else:
     # When in debug mode, simply print the command to run and do not free any ressource
     # This will allow to launch directly from the machine and thus have stdout access
     # TODO: launch on every machine but one?

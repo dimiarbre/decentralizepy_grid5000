@@ -265,12 +265,22 @@ def clear_results():
 
 print(f"Current job ID : {job_id}")
 print(f"Debugging to {DEBUG}, NB_MACHINE to {NB_MACHINE}")
-if not DEBUG or (DEBUG and NB_MACHINE > 1):
+if DEBUG and NB_MACHINE==1:
+    # When in debug mode, simply print the command to run and do not free any ressource
+    # This will allow to launch directly from the machine and thus have stdout access
+    # TODO: launch on every machine but one?
+    print("sudo-g5k rm -r /tmp/logs/machine*; time sudo-g5k " + text_command)
+else:
+    # Run  the main command automatically any other case.
     target_walltime_sec = to_sec(walltime)
     t0 = time.time()
-    main_result = en.run_command(
-        text_command, roles=roles, asynch=target_walltime_sec, poll=5 * 60
-    )
+    try:
+        main_result = en.run_command(
+            text_command, roles=roles, asynch=target_walltime_sec, #poll=5 * 60
+        )
+    except en.errors.EnosFailedHostsError as e:
+        print(e)
+        raise RuntimeError from e
     t1 = time.time()
 
     save_results()
@@ -287,9 +297,3 @@ if not DEBUG or (DEBUG and NB_MACHINE > 1):
     print(
         f"Job finished normally and was deleted, main command took {(t1-t0)/(60*60):.2f} hours to run."
     )
-
-else:
-    # When in debug mode, simply print the command to run and do not free any ressource
-    # This will allow to launch directly from the machine and thus have stdout access
-    # TODO: launch on every machine but one?
-    print("sudo-g5k rm -r /tmp/logs/machine*; time sudo-g5k " + text_command)

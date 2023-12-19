@@ -1,15 +1,15 @@
 {
-    "job_name": "decentralizepy_test_framework_updated",
+    "job_name": "testing_muffliato",
     "walltime": "1:30:00",
     "GRAPH_FILE": "4_node_ring.edges",
     "NB_AGENTS": 4,
     "NB_MACHINE":1,
     "NB_ITERATION" :100,
-    "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",
+    "AVERAGING_STEPS" : 10,
     "TEST_AFTER" :50,
+    "EVAL_FILE" :"testingPeerSamplerDynamicMultipleAvgRounds.py",
     "LOG_LEVEL" : "DEBUG",
-    "CONFIG_NAME" : "only_training_nonoise.ini",
+    "CONFIG_NAME" : "only_training_muffliato.ini",
     "cluster" : "paravance",
-    "LOCAL_SAVE_DIR" : "results/my_results/test/",
-    "AVERAGING_STEPS" : 10
+    "LOCAL_SAVE_DIR" : "results/my_results/test/"
 }

@@ -1,0 +1,16 @@
+{
+    "job_name": "zerosum_dynamic_128nodes_1avgsteps_16th",
+    "walltime": "4:00:00",
+    "GRAPH_FILE": "128nodes_6degree.edges",
+    "NB_AGENTS": 128,
+    "NB_MACHINE":8,
+    "NB_ITERATION" :8000,
+    "AVERAGING_STEPS": 1,
+    "TEST_AFTER" :25,
+    "EVAL_FILE" :"testingPeerSamplerDynamicMultipleAvgRounds.py",
+    "LOG_LEVEL" :"INFO",
+    "CONFIG_NAME" :"only_training_zerosum.ini",
+    "cluster" : "paravance",
+    "LOCAL_SAVE_DIR" : "results/my_results/test/testing_convergence_rates",
+    "DOWNLOAD_ALL": "True"
+}

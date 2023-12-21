@@ -183,9 +183,9 @@ text_command = (
 )
 
 
-def save_results():
+def save_results(download_logs=False):
     # Saves the results on the g5k global storage
-    print("-" * 20 + "saving results, discarding logs" + "-" * 20)
+    print("-" * 20 + "saving results, discarding logs if needed" + "-" * 20)
     with en.actions(roles=roles) as a:
         a.file(path=REMOTE_RESULT_DIR, state="directory")
 
@@ -193,8 +193,14 @@ def save_results():
     result = en.run_command(
         f"rsync -Crvz {REMOTE_LOGS_DIR}/* {REMOTE_RESULT_DIR}/", roles=roles["head"]
     )
+    #Conditional download of logs to ease the load on the remote storage
+    if download_logs:
+        synchro_command = f'rsync -Crvz --exclude "ip.json" --exclude "*.ini"  {REMOTE_LOGS_DIR}/* {REMOTE_RESULT_DIR}/'
+    else:
+        synchro_command = f'rsync -Crvz --exclude "ip.json"  --exclude "*.log" --exclude "*.ini"  {REMOTE_LOGS_DIR}/* {REMOTE_RESULT_DIR}/'
+
     result = en.run_command(
-        f'rsync -Crvz --exclude "ip.json" --exclude "*.ini"  {REMOTE_LOGS_DIR}/* {REMOTE_RESULT_DIR}/',
+        synchro_command,
         roles=roles["agent"],
     )
 
@@ -219,11 +225,13 @@ def download_results(download_logs=False):
             f"rennes.g5k:{REMOTE_RESULT_DIR}",  # TODO: change this to run on another site
             f"{LOCAL_SAVE_DIR}",
         ],
+        stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        check=False,
+        check = True,
     )
     print(result_main_download.stderr)
+    print(result_main_download.returncode)
 
     # Also download the logs. We want to download the results first in case of a problem
     if download_logs:
@@ -234,12 +242,14 @@ def download_results(download_logs=False):
                 f"rennes.g5k:{REMOTE_RESULT_DIR}",  # TODO: change this to run on another site
                 f"{LOCAL_SAVE_DIR}",
             ],
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            check=False,
+            check = True,
         )
+        print(result_logs_download.returncode)
         print(result_logs_download.stderr)
-        return result_main_download.returncode == 0 and result_logs_download == 0
+        return (result_main_download.returncode == 0) and (result_logs_download.returncode == 0)
     # Return True if the download was a success
     return result_main_download.returncode == 0
 
@@ -276,14 +286,14 @@ else:
     t0 = time.time()
     try:
         main_result = en.run_command(
-            text_command, roles=roles, asynch=target_walltime_sec, #poll=5 * 60
+            text_command, roles=roles, asynch=target_walltime_sec, poll=5 * 60
         )
     except en.errors.EnosFailedHostsError as e:
         print(e)
         raise RuntimeError from e
     t1 = time.time()
 
-    save_results()
+    save_results(download_logs=DOWNLOAD_ALL)
 
     # Free the ressource
     provider.destroy()
@@ -293,7 +303,10 @@ else:
     if download_success:
         # Successfully pulled all the files, then delete everything to clear space on g5k
         clear_results()
-
-    print(
-        f"Job finished normally and was deleted, main command took {(t1-t0)/(60*60):.2f} hours to run."
-    )
+        print(
+            f"Job finished normally and was deleted, main command took {(t1-t0)/(60*60):.2f} hours to run."
+        )
+    else:
+        print(
+            "WARNING: Download seems to have failed. Data not cleared, check manually"
+        )

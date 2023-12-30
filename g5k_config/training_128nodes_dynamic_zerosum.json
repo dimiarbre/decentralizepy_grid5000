@@ -1,5 +1,5 @@
 {
-    "job_name": "zerosum_selfnoise_static_128nodes_1avgsteps_64th",
+    "job_name": "zerosum_selfnoise_dynamic_128nodes_1avgsteps_8th",
     "walltime": "4:00:00",
     "GRAPH_FILE": "128nodes_6degree.edges",
     "NB_AGENTS": 128,
@@ -7,7 +7,7 @@
     "NB_ITERATION" :10000,
     "AVERAGING_STEPS": 1,
     "TEST_AFTER" :100,
-    "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",
+    "EVAL_FILE" :"testingPeerSamplerDynamicMultipleAvgRounds.py",
     "LOG_LEVEL" :"INFO",
     "CONFIG_NAME" :"only_training_zerosum.ini",
     "cluster" : "paravance",

@@ -1,16 +1,16 @@
 {
-    "job_name": "nonoise_dynamic_128nodes_1avgsteps_batch8_lr0.05",
-    "walltime": "1:00:00",
+    "job_name": "nonoise_dynamic_128nodes_1avgsteps_batch32_lr0.05_3rounds",
+    "walltime": "4:00:00",
     "GRAPH_FILE": "128nodes_6degree.edges",
     "NB_AGENTS": 128,
     "NB_MACHINE":8,
-    "NB_ITERATION" :1000,
+    "NB_ITERATION" :10000,
     "AVERAGING_STEPS": 1,
-    "TEST_AFTER" :50,
+    "TEST_AFTER" :100,
     "EVAL_FILE" :"testingPeerSamplerDynamicMultipleAvgRounds.py",
     "LOG_LEVEL" :"INFO",
     "CONFIG_NAME" :"only_training_nonoise.ini",
     "cluster" : "paravance",
-    "LOCAL_SAVE_DIR" : "results/my_results/test/testing_convergence_rates",
-    "DOWNLOAD_ALL": "True"
+    "LOCAL_SAVE_DIR" : "results/my_results/icml_experiments/cifar10",
+    "DOWNLOAD_ALL": "False"
 }

@@ -11,7 +11,7 @@ from utils import *
 
 args = sys.argv
 
-
+IS_REMOTE = False
 if len(args) < 2:
     G5K_CONFIG_PATH = "small_test_run.json"
     print(
@@ -28,6 +28,9 @@ else:
     G5K_CONFIG_PATH = args[1]
     if args[2] in ["DEBUG", "Debug", "debug"]:
         DEBUG = True
+    elif args[2] in ["Remote","remote","REMOTE"]:
+        IS_REMOTE = True
+        DEBUG = False
     else:
         DEBUG = False
 
@@ -212,6 +215,7 @@ def save_results(download_logs=False):
 
 
 def download_results(download_logs=False):
+    print(f"{'-'*20}Downloading main results{'-'*20}")
     # Download the results locally
     # TODO : This only works for clusters in Rennes, check how to generalize to other clusters?
     result_main_download = subprocess.run(
@@ -235,6 +239,8 @@ def download_results(download_logs=False):
 
     # Also download the logs. We want to download the results first in case of a problem
     if download_logs:
+        print(f"{'-'*20}Downloading additional logs{'-'*20}")
+
         result_logs_download = subprocess.run(
             [
                 "rsync",
@@ -258,18 +264,12 @@ def clear_results():
     """Remove the results from the g5k storage, be sure to call "download_results" before this"""
     print("Clearing remote logs")
     # Obtain a small job
-    cleaning_conf = en.G5kConf.from_settings(
-        job_name=job_name + "_cleanup", walltime="00:05:00"
-    ).add_machine(roles=["head"], cluster=cluster, nodes=1)
-    cleaning_provider = en.G5k(cleaning_conf)
-    cleaning_roles, _ = cleaning_provider.init()
-
-    # Delete the results
-    cleaning_result = en.run_command(f"rm -rf {REMOTE_RESULT_DIR}", roles=cleaning_roles["head"])
-
-    print(cleaning_result)
-
-    cleaning_provider.destroy()
+    result_rm = subprocess.run([
+        "ssh",
+        "rennes.g5k",
+        f"`rm {REMOTE_RESULT_DIR} -rf`",
+    ])
+    print(result_rm)
     return
 
 
@@ -298,15 +298,17 @@ else:
     # Free the ressource
     provider.destroy()
 
-    download_success = download_results(download_logs=DOWNLOAD_ALL)
+    if not IS_REMOTE:
+        #Download the logs locally only if not running on a remote job
+        download_success = download_results(download_logs=DOWNLOAD_ALL)
 
-    if download_success:
-        # Successfully pulled all the files, then delete everything to clear space on g5k
-        clear_results()
-        print(
-            f"Job finished normally and was deleted, main command took {(t1-t0)/(60*60):.2f} hours to run."
-        )
-    else:
-        print(
-            "WARNING: Download seems to have failed. Data not cleared, check manually"
-        )
+        if download_success:
+            # Successfully pulled all the files, then delete everything to clear space on g5k
+            clear_results()
+        else:
+            print(
+                "WARNING: Download seems to have failed. Data not cleared, check manually"
+            )
+    print(
+        f"Job finished normally and was deleted, main command took {(t1-t0)/(60*60):.2f} hours to run."
+    )

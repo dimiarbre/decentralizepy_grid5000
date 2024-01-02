@@ -1,4 +1,5 @@
 import os
+
 import matplotlib.pyplot as plt
 
 ATTRIBUTE_DICT = {
@@ -9,7 +10,6 @@ ATTRIBUTE_DICT = {
     "additional_attribute": ["selfnoise", "noselfnoise"],
     "noise_level": ["2th", "4th", "8th", "16th", "32th", "64th"],
 }
-
 
 def get_attributes(filename, attribute_dict=ATTRIBUTE_DICT):
     parsed_filename = filename.split("_")

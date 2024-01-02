@@ -1,15 +1,15 @@
 {
-    "job_name": "zerosum_noselfnoise_static_128nodes_1avgsteps_64th",
+    "job_name": "muffliato_static_128nodes_10avgsteps_64th",
     "walltime": "4:00:00",
     "GRAPH_FILE": "128nodes_6degree.edges",
     "NB_AGENTS": 128,
     "NB_MACHINE":8,
     "NB_ITERATION" :10000,
-    "AVERAGING_STEPS": 1,
+    "AVERAGING_STEPS": 10,
     "TEST_AFTER" :100,
     "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",
     "LOG_LEVEL" :"INFO",
-    "CONFIG_NAME" :"only_training_zerosum_noselfnoise.ini",
+    "CONFIG_NAME" :"only_training_muffliato.ini",
     "cluster" : "paravance",
     "LOCAL_SAVE_DIR" : "results/my_results/icml_experiments/cifar10",
     "DOWNLOAD_ALL": "False"

@@ -1,5 +1,5 @@
 {
-    "job_name": "zerosum_selfnoise_dynamic_128nodes_1avgsteps_8th",
+    "job_name": "zerosum_selfnoise_dynamic_128nodes_1avgsteps_2th",
     "walltime": "4:00:00",
     "GRAPH_FILE": "128nodes_6degree.edges",
     "NB_AGENTS": 128,

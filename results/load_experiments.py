@@ -4,9 +4,28 @@ from typing import Optional
 
 import pandas as pd
 import torchvision
+from localconfig import LocalConfig
 
 from decentralizepy.datasets.CIFAR10 import LeNet
 from decentralizepy.datasets.Partitioner import DataPartitioner, KShardDataPartitioner
+
+
+def read_ini(file_path: str) -> LocalConfig:
+    """Function to load the dict configuration file.
+
+    Args:
+        file_path (str): The path to the config file
+
+    Returns:
+        LocalConfig: The loaded configuration.
+    """
+    config = LocalConfig(file_path)
+    for section in config:
+        print("Section: ", section)
+        for key, value in config.items(section):
+            print((key, value))
+    print(dict(config.items("DATASET")))
+    return config
 
 
 def load_CIFAR10():
@@ -19,9 +38,12 @@ def load_CIFAR10():
         ]
     )
     trainset = torchvision.datasets.CIFAR10(
+        root="datasets/cifar10", train=True, download=True, transform=transform
+    )
+    testset = torchvision.datasets.CIFAR10(
         root="datasets/cifar10", train=False, download=True, transform=transform
     )
-    return trainset
+    return trainset, testset
 
 
 POSSIBLE_DATASETS = {
@@ -40,7 +62,7 @@ def load_dataset_partitioner(
     seed: int,
     shards: int,
     sizes: Optional[list[float]] = None,
-) -> KShardDataPartitioner:
+):
     """Loads a data partitioner in an identical way as the experiments do
 
     Args:
@@ -55,13 +77,14 @@ def load_dataset_partitioner(
 
     Returns:
         decentralizepy.datasets.KShardDataPartitioner: A data partitioner
+        testset: The test dataset
     """
     if dataset_name not in POSSIBLE_DATASETS:
         raise ValueError(
             f"{dataset_name} is not in the list of possible datasets: {list(POSSIBLE_DATASETS)}"
         )
     loader, num_classes, _ = POSSIBLE_DATASETS[dataset_name]
-    trainset = loader()
+    trainset, testset = loader()
     c_len = len(trainset)
     if sizes is None:
         # Equal distribution of data among processes, from CIFAR10 and not a simplified function.
@@ -80,7 +103,7 @@ def load_dataset_partitioner(
         all_trainset.extend([(a, y) for a in x])
     partitioner = KShardDataPartitioner(all_trainset, sizes, shards=shards, seed=seed)
 
-    return partitioner
+    return partitioner, testset
 
 
 def get_dataset_stats(dataset, nb_classes: int):
@@ -100,11 +123,19 @@ def get_dataset_stats(dataset, nb_classes: int):
     return classes
 
 
+def get_dataset_stats_batch(dataset, nb_classes: int) -> list[int]:
+    classes = [0 for _ in range(nb_classes)]
+    for _, target_batches in dataset:
+        for target in target_batches:
+            classes[target] += 1
+    return classes
+
+
 def get_model_attributes(name, path):
     parsed_model = name.split("_")
     iteration = int(parsed_model[1][2:])
     agent = int(parsed_model[2])
-    target = int(parsed_model[3][2:-4])
+    target = int(parsed_model[3][2:-4])  # Ignore the `.npy`
 
     res = pd.DataFrame(
         {
@@ -133,18 +164,15 @@ def list_models_path(
             the iteration, the agent uid and the target agent uid.
     """
     models_list = pd.DataFrame({})
-    for file in sorted(
-        os.listdir(
-            os.path.join(
-                experiment_path,
-                f"machine{machine_id}",
-                "attacked_model",
-                f"machine{machine_id}",
-                f"{agent_id}",
-            )
-        )
-    ):
-        file_attributes = get_model_attributes(file, experiment_path)
+    agent_models_directory = os.path.join(
+        experiment_path,
+        f"machine{machine_id}",
+        "attacked_model",
+        f"machine{machine_id}",
+        f"{agent_id}",
+    )
+    for file in sorted(os.listdir(agent_models_directory)):
+        file_attributes = get_model_attributes(file, agent_models_directory)
         models_list = pd.concat([models_list, file_attributes])
     return models_list
 
@@ -207,7 +235,7 @@ if __name__ == "__main__":
     MODEL = POSSIBLE_DATASETS[DATASET][2]
     NB_AGENTS = 128
     NB_MACHINES = 8
-    train_partitioner = load_dataset_partitioner(DATASET, NB_AGENTS, 90, 2)
+    train_partitioner, test_data = load_dataset_partitioner(DATASET, NB_AGENTS, 90, 2)
     for agent in range(NB_AGENTS):
         train_data_current_agent = train_partitioner.use(agent)
         agent_classes_trainset = get_dataset_stats(train_data_current_agent, NB_CLASSES)

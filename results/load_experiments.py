@@ -1,12 +1,11 @@
 import os
+import time
 from typing import Optional
 
 import pandas as pd
-import torch
 import torchvision
 
-from decentralizepy.datasets.CIFAR10 import CIFAR10
-from decentralizepy.datasets.Dataset import Dataset
+from decentralizepy.datasets.CIFAR10 import LeNet
 from decentralizepy.datasets.Partitioner import DataPartitioner, KShardDataPartitioner
 
 
@@ -25,7 +24,13 @@ def load_CIFAR10():
     return trainset
 
 
-POSSIBLE_DATASETS = {"CIFAR10": (load_CIFAR10, 10)}
+POSSIBLE_DATASETS = {
+    "CIFAR10": (
+        load_CIFAR10,
+        10,
+        LeNet,
+    )
+}
 
 
 # Problem: this function is built upon the loading function of CIFAR10 - no "general" function that can be easily reused can be found.
@@ -55,7 +60,7 @@ def load_dataset_partitioner(
         raise ValueError(
             f"{dataset_name} is not in the list of possible datasets: {list(POSSIBLE_DATASETS)}"
         )
-    loader, num_classes = POSSIBLE_DATASETS[dataset_name]
+    loader, num_classes, _ = POSSIBLE_DATASETS[dataset_name]
     trainset = loader()
     c_len = len(trainset)
     if sizes is None:
@@ -113,7 +118,20 @@ def get_model_attributes(name, path):
     return res
 
 
-def list_models_path(experiment_path, machine_id, agent_id):
+def list_models_path(
+    experiment_path: str, machine_id: int, agent_id: int
+) -> pd.DataFrame:
+    """Generates dataframe for a given agent and machine id
+
+    Args:
+        experiment_path (str): The directory of the experiment
+        machine_id (int): The id of the machine for the agent
+        agent_id (int): The id of the agent on the machine
+
+    Returns:
+        pd.Dataframe: A dataframe containing a column for the model file,
+            the iteration, the agent uid and the target agent uid.
+    """
     models_list = pd.DataFrame({})
     for file in sorted(
         os.listdir(
@@ -131,9 +149,62 @@ def list_models_path(experiment_path, machine_id, agent_id):
     return models_list
 
 
+def get_all_models_properties(
+    experiment_dir: str, nb_agents: int, nb_machines: int
+) -> pd.DataFrame:
+    """Generates a dataframe with all models path and properties (agent, iteration, target agent)
+
+    Args:
+        experiment_dir (str): The path to the experiment
+        nb_agents (int): The total number of agent for the experiment
+        nb_machines (int): The total number of machines for the experiment
+
+    Returns:
+        pd.Dataframe: A dataframe containing a column for the model file,
+            the iteration, the agent uid and the target agent uid.
+    """
+    models_df = pd.DataFrame({})
+    for agent_uid in range(nb_agents):
+        current_machine_id = agent_uid // (nb_agents // nb_machines)
+        agent_id = agent_uid % (nb_agents // nb_machines)
+        models_df = pd.concat(
+            [models_df, list_models_path(experiment_dir, current_machine_id, agent_id)]
+        )
+    return models_df
+
+
+def get_all_experiments_properties(
+    all_experiments_dir: str, nb_agents: int, nb_machines: int
+) -> pd.DataFrame:
+    """Generates a dataframe with all models path and properties (agent, iteration, target agent)
+    for all the experiments in a folder.
+
+    Args:
+        all_experiments_dir (str): The path to the experiments
+        nb_agents (int): The total number of agent for the experiments
+        nb_machines (int): The total number of machines for the experiments
+
+    Returns:
+        pd.Dataframe: A dataframe containing a column for the model file,
+            the iteration, the agent uid and the target agent uid, unified for all the experiments.
+    """
+    experiment_wide_df = pd.DataFrame({})
+
+    for experiment_name in os.listdir(all_experiments_dir):
+        experiment_path = os.path.join(all_experiments_dir, experiment_name)
+        current_experiment_df = get_all_models_properties(
+            experiment_path, nb_agents=nb_agents, nb_machines=nb_machines
+        )
+        current_experiment_df["experiment_name"] = experiment_name
+        experiment_wide_df = pd.concat([experiment_wide_df, current_experiment_df])
+
+    return experiment_wide_df
+
+
 if __name__ == "__main__":
     DATASET = "CIFAR10"
     NB_CLASSES = POSSIBLE_DATASETS[DATASET][1]
+    MODEL = POSSIBLE_DATASETS[DATASET][2]
     NB_AGENTS = 128
     NB_MACHINES = 8
     train_partitioner = load_dataset_partitioner(DATASET, NB_AGENTS, 90, 2)
@@ -142,13 +213,17 @@ if __name__ == "__main__":
         agent_classes_trainset = get_dataset_stats(train_data_current_agent, NB_CLASSES)
         print(f"Classes for agent {agent}: {agent_classes_trainset}")
 
-    EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10/2067267_nonoise_static_128nodes_1avgsteps_batch32_lr0.05_3rounds"
+    EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10/2067277_nonoise_dynamic_128nodes_1avgsteps_batch32_lr0.05_3rounds"
 
-    models_df = pd.DataFrame({})
-    for agent_uid in range(NB_AGENTS):
-        current_machine_id = agent_uid // (NB_AGENTS // NB_MACHINES)
-        agent_id = agent_uid % (NB_AGENTS // NB_MACHINES)
-        models_df = pd.concat(
-            [models_df, list_models_path(EXPERIMENT_DIR, current_machine_id, agent_id)]
-        )
-    print(models_df)
+    all_models_df = get_all_models_properties(EXPERIMENT_DIR, NB_AGENTS, NB_MACHINES)
+    print(all_models_df)
+
+    EXPERIMENTS_DIR = "results/my_results/icml_experiments/cifar10/"
+
+    t0 = time.time()
+    all_experiments_df = get_all_experiments_properties(
+        EXPERIMENTS_DIR, NB_AGENTS, NB_MACHINES
+    )
+    t1 = time.time()
+    print(all_experiments_df)
+    print(f"All models paths retrieved in {t1-t0:.2f}s")

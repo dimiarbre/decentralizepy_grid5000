@@ -150,6 +150,7 @@ def attack_experiment(
     results_directory,
     device=torch.device("cpu"),
 ):
+    print(f"Attacking {experiment_name}:  ", end="")
     res = pd.DataFrame({})
     current_experiment = experiment_df[
         experiment_df["experiment_name"] == experiment_name
@@ -159,6 +160,7 @@ def attack_experiment(
         print(f"Attacks already computed for {experiment_name}, skipping")
         return
 
+    print("Attack not already computed, starting.")
     for agent in sorted(pd.unique(current_experiment["agent"])):
         current_agent_experiments = current_experiment[
             current_experiment["agent"] == agent
@@ -195,7 +197,7 @@ def attack_experiment(
     return
 
 
-if __name__ == "__main__":
+def main():
     BATCH_SIZE = 32
     DATASET = "CIFAR10"
     NB_CLASSES = load_experiments.POSSIBLE_DATASETS[DATASET][1]
@@ -241,7 +243,7 @@ if __name__ == "__main__":
     # ---------
     print("---- Starting main attacks ----")
     EXPERIMENTS_DIR = "results/my_results/icml_experiments/cifar10/"
-    RESULTS_PATH = f"results/my_results/icml_experiments/cifar10_attack_results/"
+    RESULTS_PATH = "results/my_results/icml_experiments/cifar10_attack_results/"
     print("Loading experiments dirs")
     all_experiments_df = load_experiments.get_all_experiments_properties(
         EXPERIMENTS_DIR, NB_AGENTS, NB_MACHINES
@@ -257,7 +259,6 @@ if __name__ == "__main__":
     times = []
     print("Loaded experiments setup, launching attacks")
     for experiment_name in sorted(pd.unique(all_experiments_df["experiment_name"])):
-        print(f"Attacking {experiment_name}:")
         t0 = time.time()
         attack_experiment(
             all_experiments_df,
@@ -298,3 +299,7 @@ if __name__ == "__main__":
     # plt.title("Receiver Operating Characteristic")
     # plt.legend(loc="lower right")
     # plt.show()
+
+
+if __name__ == "__main__":
+    main()

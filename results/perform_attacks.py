@@ -1,4 +1,4 @@
-import json
+import os
 import time
 
 import load_experiments
@@ -147,12 +147,18 @@ def attack_experiment(
     shapes,
     lens,
     batch_size,
+    results_directory,
     device=torch.device("cpu"),
 ):
     res = pd.DataFrame({})
     current_experiment = experiment_df[
         experiment_df["experiment_name"] == experiment_name
     ]
+    results_file = os.path.join(results_directory, experiment_name + ".csv")
+    if os.path.exists(results_file):
+        print(f"Attacks already computed for {experiment_name}, skipping")
+        return
+
     for agent in sorted(pd.unique(current_experiment["agent"])):
         current_agent_experiments = current_experiment[
             current_experiment["agent"] == agent
@@ -183,8 +189,10 @@ def attack_experiment(
             threshold_attack_result["agent"] = agent
             threshold_attack_result["target"] = target
             res = pd.concat([res, threshold_attack_result])
-    # TODO: write this to a file instead, and check whether the file is already there before attacking
-    return res
+    print(f"Writing results to {results_file}")
+    res.to_csv(results_file)
+    print(f"Finished attacking {experiment_name}")
+    return
 
 
 if __name__ == "__main__":
@@ -233,6 +241,7 @@ if __name__ == "__main__":
     # ---------
     print("---- Starting main attacks ----")
     EXPERIMENTS_DIR = "results/my_results/icml_experiments/cifar10/"
+    RESULTS_PATH = f"results/my_results/icml_experiments/cifar10_attack_results/"
     print("Loading experiments dirs")
     all_experiments_df = load_experiments.get_all_experiments_properties(
         EXPERIMENTS_DIR, NB_AGENTS, NB_MACHINES
@@ -240,10 +249,17 @@ if __name__ == "__main__":
 
     all_experiments_df.reset_index()
 
+    # RESULTS_PATH = f"results/my_results/icml_experiments/cifar10_attack_results_quick/"
+    # all_experiments_df = all_experiments_df[
+    #     all_experiments_df["iteration"].isin([500, 5000, 10000])
+    # ]
+
+    times = []
     print("Loaded experiments setup, launching attacks")
     for experiment_name in sorted(pd.unique(all_experiments_df["experiment_name"])):
         print(f"Attacking {experiment_name}:")
-        expe_attacks_results = attack_experiment(
+        t0 = time.time()
+        attack_experiment(
             all_experiments_df,
             experiment_name=experiment_name,
             running_model=MODEL,
@@ -252,9 +268,17 @@ if __name__ == "__main__":
             shapes=SHAPES,
             lens=LENS,
             batch_size=BATCH_SIZE,
+            results_directory=RESULTS_PATH,
             device=DEVICE,
         )
-        print(expe_attacks_results)
+        t1 = time.time()
+        times.append(t1 - t0)
+        print(f"Took {times[-1]/60:.2f} minutes")
+
+    print(f"Total time: {sum(times)/(60*60):.2f} hours")
+    print(
+        f"Average time: {sum(times)/len(sorted(pd.unique(all_experiments_df['experiment_name'])))* 1/60:.2f} minutes"
+    )
 
     # import matplotlib.pyplot as plt
 

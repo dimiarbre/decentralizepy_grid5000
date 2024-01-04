@@ -11,6 +11,7 @@ ATTRIBUTE_DICT = {
     "noise_level": ["2th", "4th", "8th", "16th", "32th", "64th"],
 }
 
+
 def get_attributes(filename, attribute_dict=ATTRIBUTE_DICT):
     parsed_filename = filename.split("_")
     res_attribute = {}
@@ -74,9 +75,16 @@ def get_style(current_attributes, mapping, option_name):
     return res
 
 
-def plot_accuracy(data, name, current_attributes=None, attribute_mapping=None):
+def plot_evolution_iterations(
+    data,
+    name,
+    column_name="test_acc mean",
+    current_attributes=None,
+    attribute_mapping=None,
+):
+    data_to_consider = data[column_name].dropna()
     if current_attributes is None or attribute_mapping is None:
-        plt.plot(data.index, data["test_acc mean"], label=name)
+        plt.plot(data_to_consider.index, data_to_consider, label=name)
         return
     color = get_style(current_attributes, attribute_mapping["color"], "color")
     linestyle = get_style(
@@ -86,13 +94,42 @@ def plot_accuracy(data, name, current_attributes=None, attribute_mapping=None):
         current_attributes, attribute_mapping["linewidth"], "linewidth"
     )
     plt.plot(
-        data.index,
-        data["test_acc mean"],
+        data_to_consider.index,
+        data_to_consider,
         label=name,
         color=color,
         linestyle=linestyle,
         linewidth=linewidth,
     )
+
+
+def plot_all_experiments(
+    data,
+    experiments,
+    experiments_attributes,
+    display_attributes,
+    column_name="test_acc mean",
+    figsize=(25, 25),
+    save_directory=None,
+):
+    plt.figure(figsize=figsize)
+    for experiment in sorted(experiments):
+        plot_evolution_iterations(
+            data[experiment],
+            experiment,
+            column_name,
+            experiments_attributes[experiment],
+            display_attributes,
+        )
+
+    plt.legend()
+    plt.ylabel(column_name)
+    plt.xlabel("Iterations")
+    if save_directory is not None:
+        savefile = f"{save_directory}{column_name}_vs_iterations.pdf"
+        print(f"Saving to {savefile}")
+        plt.savefig(savefile)
+    return
 
 
 if __name__ == "__main__":

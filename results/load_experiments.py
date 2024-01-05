@@ -229,7 +229,7 @@ def get_all_experiments_properties(
     return experiment_wide_df
 
 
-if __name__ == "__main__":
+def main():
     DATASET = "CIFAR10"
     NB_CLASSES = POSSIBLE_DATASETS[DATASET][1]
     MODEL = POSSIBLE_DATASETS[DATASET][2]
@@ -255,3 +255,7 @@ if __name__ == "__main__":
     t1 = time.time()
     print(all_experiments_df)
     print(f"All models paths retrieved in {t1-t0:.2f}s")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,5 +1,7 @@
+import concurrent.futures
+import copy
+import multiprocessing
 import os
-import time
 
 import load_experiments
 import numpy as np
@@ -91,10 +93,11 @@ def generate_shapes(model):
     return shapes, lens
 
 
-def load_model_from_path(model_path, model, shapes, lens, device=torch.device("cpu")):
+def load_model_from_path(model_path, model, shapes, lens, device=None):
     model_weigths = np.load(model_path)
     model.load_state_dict(deserialized_model(model_weigths, model, shapes, lens))
-    model.to(device)
+    if device is not None:
+        model.to(device)
 
 
 def generate_losses(
@@ -140,17 +143,22 @@ def run_threshold_attack(
 
 def attack_experiment(
     experiment_df,
+    results_directory: str,
     experiment_name: str,
-    running_model,
-    trainset_partitioner,
-    testset,
-    shapes,
-    lens,
+    model_initialiser,
     batch_size,
-    results_directory,
-    device=torch.device("cpu"),
+    dataset,
+    nb_agents,
+    seed,
+    kshards,
+    device_type: str = "cpu",
 ):
+    device = torch.device(device_type)
     print(f"Attacking {experiment_name}:  ", end="")
+    trainset_partitioner, testset = load_experiments.load_dataset_partitioner(
+        dataset, nb_agents, seed, kshards
+    )
+    testset = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
     res = pd.DataFrame({})
     current_experiment = experiment_df[
         experiment_df["experiment_name"] == experiment_name
@@ -161,6 +169,14 @@ def attack_experiment(
         return
 
     print("Attack not already computed, starting.")
+    results_file = os.path.join(results_directory, experiment_name, ".csv")
+
+    running_model = model_initialiser()
+    shapes, lens = generate_shapes(running_model)
+    if os.path.exists(results_file):
+        print(f"Attacks already computed for {experiment_name}, skipping")
+        return
+
     for agent in sorted(pd.unique(current_experiment["agent"])):
         current_agent_experiments = current_experiment[
             current_experiment["agent"] == agent
@@ -200,43 +216,12 @@ def attack_experiment(
 def main():
     BATCH_SIZE = 32
     DATASET = "CIFAR10"
-    NB_CLASSES = load_experiments.POSSIBLE_DATASETS[DATASET][1]
-    MODEL = load_experiments.POSSIBLE_DATASETS[DATASET][2]
     NB_AGENTS = 128
     NB_MACHINES = 8
     SEED = 90
     KSHARDS = 2
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # DEVICE = torch.device("cpu")
-    print(f"Running on {DEVICE}")
-
-    MODEL_PATH = "results/my_results/icml_experiments/cifar10/2069897_muffliato_dynamic_128nodes_10avgsteps_16th/machine0/attacked_model/machine0/0/model_it10000_0_to36.npy"
-    CURRENT_AGENT = 0
-    train_partitioner, testset = load_experiments.load_dataset_partitioner(
-        DATASET, NB_AGENTS, SEED, KSHARDS
-    )
-    MODEL = LeNet()
-    SHAPES, LENS = generate_shapes(MODEL)
-
-    trainset = train_partitioner.use(CURRENT_AGENT)
-    stats_before = load_experiments.get_dataset_stats(trainset, NB_CLASSES)
-    print(f"Dataset stats for user {CURRENT_AGENT} before batch: {stats_before}")
-    trainset = torch.utils.data.DataLoader(
-        trainset, batch_size=BATCH_SIZE, shuffle=False
-    )
-
-    stats = load_experiments.get_dataset_stats_batch(trainset, NB_CLASSES)
-    print(f"Dataset stats for user {CURRENT_AGENT} after batch: {stats}")
-    testset = torch.utils.data.DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False)
-
-    t0 = time.time()
-    threshold_attack_result = run_threshold_attack(
-        MODEL, MODEL_PATH, trainset, testset, SHAPES, LENS, device=DEVICE
-    )
-    t1 = time.time()
-
-    print(threshold_attack_result["roc_auc"])
-    print(f"Attack done in {t1-t0:.2f}s")
+    MODEL_ARCHITECTURE = LeNet
+    DEVICE_TYPE = "cuda"
 
     # ---------
     # Running the main attacks on all the experiments
@@ -244,6 +229,7 @@ def main():
     print("---- Starting main attacks ----")
     EXPERIMENTS_DIR = "results/my_results/icml_experiments/cifar10/"
     RESULTS_PATH = "results/my_results/icml_experiments/cifar10_attack_results/"
+    NB_PROCESSES = 4
     print("Loading experiments dirs")
     all_experiments_df = load_experiments.get_all_experiments_properties(
         EXPERIMENTS_DIR, NB_AGENTS, NB_MACHINES
@@ -251,35 +237,42 @@ def main():
 
     all_experiments_df.reset_index()
 
+    # When debugging, save the dataframe and load it to avoid cold starts.
+    # all_experiments_df.to_csv("experiments_df.csv")
+    # all_experiments_df = pd.read_csv("experiments_df.csv")
+
+    # Use this we want to reduce the size of the experiments to consider for quick results
     # RESULTS_PATH = f"results/my_results/icml_experiments/cifar10_attack_results_quick/"
     # all_experiments_df = all_experiments_df[
     #     all_experiments_df["iteration"].isin([500, 5000, 10000])
     # ]
 
-    times = []
-    print("Loaded experiments setup, launching attacks")
-    for experiment_name in sorted(pd.unique(all_experiments_df["experiment_name"])):
-        t0 = time.time()
-        attack_experiment(
-            all_experiments_df,
-            experiment_name=experiment_name,
-            running_model=MODEL,
-            trainset_partitioner=train_partitioner,
-            testset=testset,
-            shapes=SHAPES,
-            lens=LENS,
-            batch_size=BATCH_SIZE,
-            results_directory=RESULTS_PATH,
-            device=DEVICE,
-        )
-        t1 = time.time()
-        times.append(t1 - t0)
-        print(f"Took {times[-1]/60:.2f} minutes")
+    futures = []
+    context = multiprocessing.get_context("spawn")
+    with concurrent.futures.ProcessPoolExecutor(
+        max_workers=NB_PROCESSES, mp_context=context
+    ) as executor:
+        for experiment_name in sorted(pd.unique(all_experiments_df["experiment_name"])):
+            future = executor.submit(
+                attack_experiment,
+                copy.deepcopy(all_experiments_df),
+                results_directory=copy.deepcopy(RESULTS_PATH),
+                experiment_name=copy.deepcopy(experiment_name),
+                model_initialiser=copy.deepcopy(MODEL_ARCHITECTURE),
+                batch_size=copy.deepcopy(BATCH_SIZE),
+                dataset=copy.deepcopy(DATASET),
+                nb_agents=copy.deepcopy(NB_AGENTS),
+                seed=copy.deepcopy(SEED),
+                kshards=copy.deepcopy(KSHARDS),
+                device_type=copy.deepcopy(DEVICE_TYPE),
+            )
+            futures.append(future)
+        done, _ = concurrent.futures.wait(futures)
+        results = []
+        for future in done:
+            results.append(future.result())
 
-    print(f"Total time: {sum(times)/(60*60):.2f} hours")
-    print(
-        f"Average time: {sum(times)/len(sorted(pd.unique(all_experiments_df['experiment_name'])))* 1/60:.2f} minutes"
-    )
+        print(results)
 
     # import matplotlib.pyplot as plt
 

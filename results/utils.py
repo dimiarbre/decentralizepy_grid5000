@@ -108,6 +108,7 @@ def plot_all_experiments(
     experiments,
     experiments_attributes,
     display_attributes,
+    plot_name,
     column_name="test_acc mean",
     figsize=(25, 25),
     save_directory=None,
@@ -125,8 +126,150 @@ def plot_all_experiments(
     plt.legend()
     plt.ylabel(column_name)
     plt.xlabel("Iterations")
+    plt.title(plot_name)
     if save_directory is not None:
-        savefile = f"{save_directory}{column_name}_vs_iterations.pdf"
+        savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"
+        print(f"Saving to {savefile}")
+        plt.savefig(savefile)
+    return
+
+
+def scatter_evolution_iterations(
+    data,
+    name,
+    column_name="test_acc mean",
+    x_axis_name="iteration",
+    current_attributes=None,
+    attribute_mapping=None,
+    color_map_iteration=False,
+):
+    if x_axis_name == "iteration":
+        data_to_consider = data[column_name].dropna()
+        x_axis = data_to_consider.index
+        y_axis = data_to_consider
+
+    else:
+        data_to_consider = data[[x_axis_name, column_name]].dropna()
+        x_axis = data_to_consider[x_axis_name]
+        y_axis = data_to_consider[column_name]
+    if current_attributes is None or attribute_mapping is None:
+        plt.scatter(x_axis, y_axis, label=name)
+        return
+    if color_map_iteration:
+        color = data_to_consider.index
+        cmap = "gray"
+    else:
+        color = get_style(current_attributes, attribute_mapping["color"], "color")
+        cmap = None
+    marker_style = get_style(current_attributes, attribute_mapping["marker"], "marker")
+    linewidth = get_style(
+        current_attributes, attribute_mapping["linewidth"], "linewidth"
+    )
+
+    plt.scatter(
+        x=x_axis,
+        y=y_axis,
+        label=name,
+        c=color,
+        marker=marker_style,
+        linewidth=linewidth,
+        cmap=cmap,
+    )
+
+
+def scatter_all_experiments(
+    data,
+    experiments,
+    experiments_attributes,
+    display_attributes,
+    plot_name,
+    column_name="test_acc mean",
+    x_axis_name="iteration",
+    figsize=(25, 25),
+    save_directory=None,
+):
+    plt.figure(figsize=figsize)
+    for experiment in sorted(experiments):
+        scatter_evolution_iterations(
+            data=data[experiment],
+            name=experiment,
+            column_name=column_name,
+            x_axis_name=x_axis_name,
+            current_attributes=experiments_attributes[experiment],
+            attribute_mapping=display_attributes,
+        )
+
+    plt.legend()
+    plt.ylabel(column_name)
+    plt.xlabel(x_axis_name)
+    plt.title(plot_name)
+    if save_directory is not None:
+        savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"
+        print(f"Saving to {savefile}")
+        plt.savefig(savefile)
+    return
+
+
+def scatter_aggregated_data(
+    data,
+    name,
+    column_name="test_acc mean",
+    x_axis_name="iteration",
+    current_attributes=None,
+    attribute_mapping=None,
+):
+    if x_axis_name == "iteration":
+        raise ValueError("Shouldn't scatter averaged data on iterations")
+    else:
+        data_to_consider = data[[x_axis_name, column_name]].dropna()
+        x_value = data_to_consider[x_axis_name].mean()
+        y_value = data_to_consider[column_name].mean()
+    if current_attributes is None or attribute_mapping is None:
+        plt.scatter(x_value, y_value, label=name)
+        return
+    color = get_style(current_attributes, attribute_mapping["color"], "color")
+    marker_style = get_style(current_attributes, attribute_mapping["marker"], "marker")
+    linewidth = get_style(
+        current_attributes, attribute_mapping["linewidth"], "linewidth"
+    )
+    plt.scatter(
+        x=x_value,
+        y=y_value,
+        label=name,
+        color=color,
+        marker=marker_style,
+        linewidth=linewidth,
+    )
+
+
+def scatter_averaged_experiments(
+    data,
+    experiments,
+    experiments_attributes,
+    display_attributes,
+    plot_name,
+    column_name="test_acc mean",
+    x_axis_name="iteration",
+    figsize=(25, 25),
+    save_directory=None,
+):
+    plt.figure(figsize=figsize)
+    for experiment in sorted(experiments):
+        scatter_aggregated_data(
+            data=data[experiment],
+            name=experiment,
+            column_name=column_name,
+            x_axis_name=x_axis_name,
+            current_attributes=experiments_attributes[experiment],
+            attribute_mapping=display_attributes,
+        )
+
+    plt.legend()
+    plt.ylabel(column_name + " mean")
+    plt.xlabel(x_axis_name + " mean")
+    plt.title(plot_name)
+    if save_directory is not None:
+        savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"
         print(f"Saving to {savefile}")
         plt.savefig(savefile)
     return

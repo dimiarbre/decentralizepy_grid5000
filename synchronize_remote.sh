@@ -1,1 +1,1 @@
-rsync -avzP --exclude .git/ --exclude results --exclude *.sif --exclude venv* --exclude tmp* --exclude **__pycache__  ../decentralizepy_grid5000 rennes.g5k:scratch/
+rsync -avzP --exclude \\.* --include \*/decentralizepy/datasets/ --exclude datasets/  --exclude results --exclude *.sif --exclude venv* --exclude tmp* --exclude **__pycache__  ../decentralizepy_grid5000 rennes.g5k:scratch/

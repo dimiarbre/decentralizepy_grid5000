@@ -18,7 +18,7 @@ class LinkabilityAttack:
         client_datasets,
         loss,
         eval_batch_size=16,
-        device="cpu",
+        device: str | torch.device = "cpu",
     ) -> None:
         self.num_clients = num_clients
         self.client_datasets = client_datasets
@@ -72,6 +72,24 @@ class LinkabilityAttack:
                     min_loss = cur_loss
                     predicted_client = client
         return predicted_client
+
+    def log_all_losses(self, model, skip=[]):
+        """
+        Function to mount linkability attack on the model.
+
+        Args:
+            model (torch.nn.Module): Model to be attacked.
+
+        Returns:
+            Attack results like linked identity
+
+        """
+        losses = {}
+        for client in range(self.num_clients):
+            if client not in skip:
+                cur_loss = self.eval_loss(model, self.client_datasets.use(client))
+                losses[f"loss_trainset_{client}"] = cur_loss
+        return losses
 
 
 def main():

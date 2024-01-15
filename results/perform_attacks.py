@@ -1,6 +1,5 @@
 import concurrent.futures
 import copy
-import logging
 import multiprocessing
 import os
 
@@ -158,6 +157,7 @@ def run_threshold_attack(
 def run_linkability_attack(
     running_model,
     model_path,
+    expected_agent,
     attack_object: LinkabilityAttack,
     shapes,
     lens,
@@ -171,10 +171,21 @@ def run_linkability_attack(
         device=device,
     )
 
-    predicted_agent = attack_object.attack(running_model)
+    res = attack_object.log_all_losses(running_model)
+    all_losses_list = [(agent, loss_agent) for agent, loss_agent in res.items()]
+    all_losses_list.sort(key=lambda x: x[1])
+    top_5 = [int(all_losses_list[i][0].split("_")[2]) for i in range(5)]
 
-    res = pd.DataFrame({"predicted_linkability": predicted_agent}, index=[0])
-    return res
+    res["linkability_top1"] = expected_agent == all_losses_list[0][0]
+    res["linkability_top1_guess"] = top_5[0]
+    res["linkability_top5"] = expected_agent in top_5
+
+    for index, (agent, _) in enumerate(all_losses_list):
+        if expected_agent == agent:
+            res["linkability_real_rank"] = index
+            break
+
+    return pd.DataFrame(res, index=[0])
 
 
 def attack_experiment(
@@ -245,6 +256,7 @@ def attack_experiment(
                 attack_result = run_linkability_attack(
                     running_model=running_model,
                     model_path=model_path,
+                    expected_agent=agent,  # We want to guess the CURRENT agent!
                     attack_object=attack_object,
                     shapes=shapes,
                     lens=lens,
@@ -264,6 +276,12 @@ def attack_experiment(
             attack_result["agent"] = agent
             attack_result["target"] = target
             res = pd.concat([res, attack_result])
+    # Rewrite the columns in a better order
+    columns = res.columns.tolist()
+    columns.sort(key=lambda x: (1, "") if "loss_trainset_" in x else (0, x))
+
+    res = res[columns]
+    # Save the file
     print(f"Writing results to {results_file}")
     res.to_csv(results_file)
     print(f"Finished attacking {experiment_name}")
@@ -272,7 +290,7 @@ def attack_experiment(
 
 def main():
     attack = "linkability"
-    batch_size = 128
+    batch_size = 512
     dataset = "CIFAR10"
     nb_agents = 128
     nb_machines = 8
@@ -286,14 +304,14 @@ def main():
     # ---------
     print("---- Starting main attacks ----")
     experiments_dir = "results/my_results/icml_experiments/cifar10/"
-    results_path = "results/my_results/icml_experiments/cifar10_attack_results_quick/"
+    results_path = (
+        "results/my_results/icml_experiments/cifar10_attack_results_unbalanced/"
+    )
     nb_processes = 20
     print("Loading experiments dirs")
     all_experiments_df = load_experiments.get_all_experiments_properties(
         experiments_dir, nb_agents, nb_machines
     )
-
-    all_experiments_df.reset_index()
 
     # When debugging, save the dataframe and load it to avoid cold starts.
     # all_experiments_df.to_csv("experiments_df.csv")
@@ -304,6 +322,8 @@ def main():
     # all_experiments_df = all_experiments_df[
     #     all_experiments_df["iteration"].isin([500, 5000, 10000])
     # ]
+
+    all_experiments_df.reset_index()
 
     futures = []
     context = multiprocessing.get_context("spawn")

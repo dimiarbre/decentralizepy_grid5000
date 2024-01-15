@@ -28,7 +28,7 @@ else:
     G5K_CONFIG_PATH = args[1]
     if args[2] in ["DEBUG", "Debug", "debug"]:
         DEBUG = True
-    elif args[2] in ["Remote","remote","REMOTE"]:
+    elif args[2] in ["Remote", "remote", "REMOTE"]:
         IS_REMOTE = True
         DEBUG = False
     else:
@@ -83,6 +83,10 @@ with open(CONFIG_FILE) as config:
 en.init_logging(level=logging.INFO)
 en.check()
 
+# Set very high parallelism to be able to handle a large number of VMs
+# print(NB_MACHINE)
+en.set_config(ansible_forks=NB_MACHINE)  # Only works with enoslib>=9.0.0
+
 
 conf = (
     # en.G5kConf.from_settings(job_name=job_name, walltime=real_walltime, job_type=["exotic"])
@@ -121,8 +125,6 @@ REMOTE_RESULT_DIR = REMOTE_SCRATCH_DIR + f"/results/{RUN_FOLDER_NAME}"
 
 singularity_version = en.run_command(f"{SINGULARITY} --version", roles=roles)
 
-# TODO: change this for when several concurrent jobs are running : one for each job.
-# But shouldn't be a problem since we have different nodes entirely using enoslib.
 REMOTE_PRIVACY_DATASETS_DIR = "/tmp/privacy"
 REMOTE_IP_FILE = REMOTE_LOGS_DIR + "/ip.json"
 
@@ -196,7 +198,7 @@ def save_results(download_logs=False):
     result = en.run_command(
         f"rsync -Crvz {REMOTE_LOGS_DIR}/* {REMOTE_RESULT_DIR}/", roles=roles["head"]
     )
-    #Conditional download of logs to ease the load on the remote storage
+    # Conditional download of logs to ease the load on the remote storage
     if download_logs:
         synchro_command = f'rsync -Crvz --exclude "ip.json" --exclude "*.ini"  {REMOTE_LOGS_DIR}/* {REMOTE_RESULT_DIR}/'
     else:
@@ -217,6 +219,7 @@ def save_results(download_logs=False):
 def download_results(download_logs=False):
     print(f"{'-'*20}Downloading main results{'-'*20}")
     # Download the results locally
+    print(f"Downloading at {LOCAL_SAVE_DIR}")
     # TODO : This only works for clusters in Rennes, check how to generalize to other clusters?
     result_main_download = subprocess.run(
         [
@@ -232,7 +235,7 @@ def download_results(download_logs=False):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        check = True,
+        check=True,
     )
     print(result_main_download.stderr)
     print(result_main_download.returncode)
@@ -251,11 +254,13 @@ def download_results(download_logs=False):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            check = True,
+            check=True,
         )
         print(result_logs_download.returncode)
         print(result_logs_download.stderr)
-        return (result_main_download.returncode == 0) and (result_logs_download.returncode == 0)
+        return (result_main_download.returncode == 0) and (
+            result_logs_download.returncode == 0
+        )
     # Return True if the download was a success
     return result_main_download.returncode == 0
 
@@ -264,18 +269,20 @@ def clear_results():
     """Remove the results from the g5k storage, be sure to call "download_results" before this"""
     print("Clearing remote logs")
     # Obtain a small job
-    result_rm = subprocess.run([
-        "ssh",
-        "rennes.g5k",
-        f"`rm {REMOTE_RESULT_DIR} -rf`",
-    ])
+    result_rm = subprocess.run(
+        [
+            "ssh",
+            "rennes.g5k",
+            f"`rm {REMOTE_RESULT_DIR} -rf`",
+        ]
+    )
     print(result_rm)
     return
 
 
 print(f"Current job ID : {job_id}")
 print(f"Debugging to {DEBUG}, NB_MACHINE to {NB_MACHINE}")
-if DEBUG and NB_MACHINE==1:
+if DEBUG and NB_MACHINE == 1:
     # When in debug mode, simply print the command to run and do not free any ressource
     # This will allow to launch directly from the machine and thus have stdout access
     # TODO: launch on every machine but one?
@@ -283,6 +290,7 @@ if DEBUG and NB_MACHINE==1:
 else:
     # Run  the main command automatically any other case.
     target_walltime_sec = to_sec(walltime)
+    print(f"Enoslib version: {en.__version__}")
     t0 = time.time()
     try:
         main_result = en.run_command(
@@ -299,7 +307,7 @@ else:
     provider.destroy()
 
     if not IS_REMOTE:
-        #Download the logs locally only if not running on a remote job
+        # Download the logs locally only if not running on a remote job
         download_success = download_results(download_logs=DOWNLOAD_ALL)
 
         if download_success:

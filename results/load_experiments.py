@@ -93,7 +93,7 @@ def load_dataset_partitioner(
         frac = e / c_len
         sizes = [frac] * total_agents
         sizes[-1] += 1.0 - frac * total_agents
-        print(f"Size fractions: {sizes}")
+        # print(f"Size fractions: {sizes}")
 
     train_data: dict = {key: [] for key in range(num_classes)}
     for x, y in trainset:

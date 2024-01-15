@@ -6,7 +6,7 @@ ATTRIBUTE_DICT = {
     "network_size": ["128nodes"],
     "topology_type": ["static", "dynamic"],
     "variant": ["nonoise", "muffliato", "zerosum"],
-    "avgsteps": ["10avgsteps"],
+    "avgsteps": ["10avgsteps", "1avgsteps"],
     "additional_attribute": ["selfnoise", "noselfnoise"],
     "noise_level": ["2th", "4th", "8th", "16th", "32th", "64th"],
 }
@@ -57,6 +57,16 @@ def filter_attribute(experiments_attributes, attributes_to_check):
         matches_attributes = check_attribute(experiment_attribute, attributes_to_check)
         if matches_attributes:
             res.append(experiment_name)
+    return res
+
+
+def filter_attribute_list(experiment_attributes, attributes_to_check_list):
+    res = []
+    for attributes_to_check in attributes_to_check_list:
+        res = res + filter_attribute(
+            experiments_attributes=experiment_attributes,
+            attributes_to_check=attributes_to_check,
+        )
     return res
 
 
@@ -279,13 +289,19 @@ if __name__ == "__main__":
     EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10"
     paths_dict = get_full_path_dict(EXPERIMENT_DIR)
     experiments_dict = get_experiments_dict(paths_dict.keys())
-    # print(experiments_dict)
-    # print(paths_dict)
+    print(experiments_dict)
+    print(paths_dict)
 
-    attributes_to_check = {
-        "variant": "zerosum",
-        "additional_attribute": ["noselfnoise"],
-    }
+    attributes_list_to_check = [
+        {
+            "variant": "zerosum",
+            "additional_attribute": ["noselfnoise"],
+        },
+        {
+            "variant": "muffliato",
+            "avgsteps": "1avgsteps",
+        },
+    ]
 
-    res = filter_attribute(experiments_dict, attributes_to_check)
+    res = filter_attribute_list(experiments_dict, attributes_list_to_check)
     print(res)

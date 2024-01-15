@@ -176,7 +176,7 @@ def run_linkability_attack(
     all_losses_list.sort(key=lambda x: x[1])
     top_5 = [int(all_losses_list[i][0].split("_")[2]) for i in range(5)]
 
-    res["linkability_top1"] = expected_agent == all_losses_list[0][0]
+    res["linkability_top1"] = expected_agent == top_5[0]
     res["linkability_top1_guess"] = top_5[0]
     res["linkability_top5"] = expected_agent in top_5
 

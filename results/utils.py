@@ -3,14 +3,15 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 
 ATTRIBUTE_DICT = {
     "network_size": ["128nodes"],
     "topology_type": ["static", "dynamic"],
     "variant": ["nonoise", "muffliato", "zerosum"],
     "avgsteps": ["10avgsteps", "1avgsteps"],
-    "additional_attribute": ["selfnoise", "noselfnoise"],
-    "noise_level": ["2th", "4th", "8th", "16th", "32th", "64th"],
+    "additional_attribute": ["selfnoise", "noselfnoise", "nonoise", "muffliato"],
+    "noise_level": ["nonoise", "2th", "4th", "8th", "16th", "32th", "64th"],
 }
 
 
@@ -55,11 +56,11 @@ def check_attribute(experiment_attributes, attributes_to_check):
 
 def filter_attribute(experiments_attributes, attributes_to_check):
     res = []
-    for experiment_name, experiment_attribute in experiments_attributes.items():
+    for experiment_name, experiment_attribute in sorted(experiments_attributes.items()):
         matches_attributes = check_attribute(experiment_attribute, attributes_to_check)
         if matches_attributes:
             res.append(experiment_name)
-    return res
+    return sorted(res)
 
 
 def filter_attribute_list(experiment_attributes, attributes_to_check_list):
@@ -116,30 +117,78 @@ def plot_evolution_iterations(
     )
 
 
+def get_attributes_columns(name, display_attributes, data_to_plot, orderings):
+    if name in display_attributes:
+        column_labels = display_attributes[name]
+        if isinstance(column_labels, list):
+            return data_to_plot[column_labels].apply(tuple, axis=1), None
+        elif isinstance(column_labels, str):
+            if orderings is not None and column_labels in orderings:
+                return column_labels, orderings[column_labels]
+            return column_labels, None
+    return None, None
+
+
+def select_attributes_to_keep(display_attributes, x_axis_name):
+    attributes_to_keep = [] if x_axis_name == "iteration" else [x_axis_name]
+    if display_attributes is not None:
+        for _, item in display_attributes.items():
+            if isinstance(item, list):
+                for attribute in item:
+                    if attribute not in attributes_to_keep:
+                        attributes_to_keep.append(attribute)
+            elif item not in attributes_to_keep:
+                attributes_to_keep.append(item)
+    return attributes_to_keep
+
+
 def plot_all_experiments(
-    data,
+    data: dict[str, pd.DataFrame],
     experiments,
-    experiments_attributes,
     display_attributes,
     plot_name,
     column_name="test_acc mean",
-    figsize=(25, 25),
     save_directory=None,
+    orderings=None,
 ):
-    plt.figure(figsize=figsize)
-    for experiment in sorted(experiments):
-        plot_evolution_iterations(
-            data[experiment],
-            experiment,
-            column_name,
-            experiments_attributes[experiment],
-            display_attributes,
-        )
+    attributes_to_keep = select_attributes_to_keep(display_attributes, "iteration")
+    data_to_plot = pd.DataFrame({})
+    for experiment in experiments:
+        data_experiment = data[experiment][[column_name] + attributes_to_keep]
+        data_experiment = data_experiment.dropna()
+        data_to_plot = pd.concat([data_to_plot, data_experiment])
 
-    plt.legend()
-    plt.ylabel(column_name)
-    plt.xlabel("Iterations")
-    plt.title(plot_name)
+    sns.set_theme()
+    hue, hue_ordering = get_attributes_columns(
+        "hue", display_attributes, data_to_plot, orderings
+    )
+    style, style_ordering = get_attributes_columns(
+        "style", display_attributes, data_to_plot, orderings
+    )
+    size, size_ordering = get_attributes_columns(
+        "size", display_attributes, data_to_plot, orderings
+    )
+    col, col_ordering = get_attributes_columns(
+        "col", display_attributes, data_to_plot, orderings
+    )
+
+    plot = sns.relplot(
+        data=data_to_plot,
+        kind="line",
+        x="iteration",
+        y=column_name,
+        hue=hue,
+        hue_order=hue_ordering,
+        style=style,
+        style_order=style_ordering,
+        size=size,
+        size_order=size_ordering,
+        col=col,
+        col_order=col_ordering,
+        sizes=(1, 5),
+    )
+    plot.fig.suptitle(plot_name)
+    plot.fig.subplots_adjust(top=0.9)
     if save_directory is not None:
         savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"
         print(f"Saving to {savefile}")
@@ -147,75 +196,55 @@ def plot_all_experiments(
     return
 
 
-def scatter_evolution_iterations(
-    data,
-    name,
-    column_name="test_acc mean",
-    x_axis_name="iteration",
-    current_attributes=None,
-    attribute_mapping=None,
-    color_map_iteration=False,
-):
-    if x_axis_name == "iteration":
-        data_to_consider = data[column_name].dropna()
-        x_axis = data_to_consider.index
-        y_axis = data_to_consider
-
-    else:
-        data_to_consider = data[[x_axis_name, column_name]].dropna()
-        x_axis = data_to_consider[x_axis_name]
-        y_axis = data_to_consider[column_name]
-    if current_attributes is None or attribute_mapping is None:
-        plt.scatter(x_axis, y_axis, label=name)
-        return
-    if color_map_iteration:
-        color = data_to_consider.index
-        cmap = "gray"
-    else:
-        color = get_style(current_attributes, attribute_mapping["color"], "color")
-        cmap = None
-    marker_style = get_style(current_attributes, attribute_mapping["marker"], "marker")
-    linewidth = get_style(
-        current_attributes, attribute_mapping["linewidth"], "linewidth"
-    )
-
-    plt.scatter(
-        x=x_axis,
-        y=y_axis,
-        label=name,
-        c=color,
-        marker=marker_style,
-        linewidth=linewidth,
-        cmap=cmap,
-    )
-
-
 def scatter_all_experiments(
-    data,
+    data: dict[str, pd.DataFrame],
     experiments,
-    experiments_attributes,
     display_attributes,
     plot_name,
-    column_name="test_acc mean",
     x_axis_name="iteration",
-    figsize=(25, 25),
+    column_name="test_acc mean",
     save_directory=None,
+    orderings=None,
 ):
-    plt.figure(figsize=figsize)
-    for experiment in sorted(experiments):
-        scatter_evolution_iterations(
-            data=data[experiment],
-            name=experiment,
-            column_name=column_name,
-            x_axis_name=x_axis_name,
-            current_attributes=experiments_attributes[experiment],
-            attribute_mapping=display_attributes,
-        )
+    attributes_to_keep = select_attributes_to_keep(
+        display_attributes=display_attributes, x_axis_name=x_axis_name
+    )
+    data_to_plot = pd.DataFrame({})
+    for experiment in experiments:
+        data_experiment = data[experiment][[column_name] + attributes_to_keep]
+        data_experiment = data_experiment.dropna()
+        data_to_plot = pd.concat([data_to_plot, data_experiment])
 
-    plt.legend()
-    plt.ylabel(column_name)
-    plt.xlabel(x_axis_name)
-    plt.title(plot_name)
+    sns.set_theme()
+    hue, hue_ordering = get_attributes_columns(
+        "hue", display_attributes, data_to_plot, orderings
+    )
+    style, style_ordering = get_attributes_columns(
+        "style", display_attributes, data_to_plot, orderings
+    )
+    size, size_ordering = get_attributes_columns(
+        "size", display_attributes, data_to_plot, orderings
+    )
+    col, col_ordering = get_attributes_columns(
+        "col", display_attributes, data_to_plot, orderings
+    )
+
+    plot = sns.jointplot(
+        data=data_to_plot,
+        x=x_axis_name,
+        y=column_name,
+        hue=hue,
+        hue_order=hue_ordering,
+        # style=style,
+        # style_order=style_ordering,
+        # size=size,
+        # size_order=size_ordering,
+        # col=col,
+        # col_order=col_ordering,
+        # sizes=(5, 10),
+    )
+    plot.fig.suptitle(plot_name)
+    plot.fig.subplots_adjust(top=0.9)
     if save_directory is not None:
         savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"
         print(f"Saving to {savefile}")

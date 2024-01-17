@@ -172,9 +172,11 @@ def run_linkability_attack(
     )
 
     res = attack_object.log_all_losses(running_model)
-    all_losses_list = [(agent, loss_agent) for agent, loss_agent in res.items()]
+    all_losses_list = [
+        (int(agent.split("_")[2]), loss_agent) for agent, loss_agent in res.items()
+    ]
     all_losses_list.sort(key=lambda x: x[1])
-    top_5 = [int(all_losses_list[i][0].split("_")[2]) for i in range(5)]
+    top_5 = [all_losses_list[i][0] for i in range(5)]
 
     res["linkability_top1"] = expected_agent == top_5[0]
     res["linkability_top1_guess"] = top_5[0]
@@ -184,7 +186,11 @@ def run_linkability_attack(
         if expected_agent == agent:
             res["linkability_real_rank"] = index
             break
-
+    if "linkability_real_rank" not in res:
+        print(
+            f"ERROR: no linkability real rank found for {model_path} when it should have."
+        )
+        res["linkability_real_rank"] = np.nan
     return pd.DataFrame(res, index=[0])
 
 
@@ -309,13 +315,13 @@ def main():
     )
     nb_processes = 20
     print("Loading experiments dirs")
-    all_experiments_df = load_experiments.get_all_experiments_properties(
-        experiments_dir, nb_agents, nb_machines
-    )
+    # all_experiments_df = load_experiments.get_all_experiments_properties(
+    #     experiments_dir, nb_agents, nb_machines
+    # )
 
     # When debugging, save the dataframe and load it to avoid cold starts.
     # all_experiments_df.to_csv("experiments_df.csv")
-    # all_experiments_df = pd.read_csv("experiments_df.csv")
+    all_experiments_df = pd.read_csv("experiments_df.csv")
 
     # Use this we want to reduce the size of the experiments to consider for quick results
     # results_path = "results/my_results/icml_experiments/cifar10_attack_results_quick/"
@@ -331,20 +337,20 @@ def main():
         max_workers=nb_processes, mp_context=context
     ) as executor:
         for experiment_name in sorted(pd.unique(all_experiments_df["experiment_name"])):
-            # attack_experiment(
-            #     copy.deepcopy(all_experiments_df),
-            #     results_directory=copy.deepcopy(results_path),
-            #     experiment_name=copy.deepcopy(experiment_name),
-            #     model_initialiser=copy.deepcopy(model_architecture),
-            #     batch_size=copy.deepcopy(batch_size),
-            #     dataset=copy.deepcopy(dataset),
-            #     nb_agents=copy.deepcopy(nb_agents),
-            #     seed=copy.deepcopy(seed),
-            #     kshards=copy.deepcopy(kshards),
-            #     device_type=copy.deepcopy(device_type),
-            #     attack=copy.deepcopy(attack),
-            # )
-            # break
+            attack_experiment(
+                copy.deepcopy(all_experiments_df),
+                results_directory=copy.deepcopy(results_path),
+                experiment_name=copy.deepcopy(experiment_name),
+                model_initialiser=copy.deepcopy(model_architecture),
+                batch_size=copy.deepcopy(batch_size),
+                dataset=copy.deepcopy(dataset),
+                nb_agents=copy.deepcopy(nb_agents),
+                seed=copy.deepcopy(seed),
+                kshards=copy.deepcopy(kshards),
+                device_type=copy.deepcopy(device_type),
+                attack=copy.deepcopy(attack),
+            )
+            break
             future = executor.submit(
                 attack_experiment,
                 copy.deepcopy(all_experiments_df),

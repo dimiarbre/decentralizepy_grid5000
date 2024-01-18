@@ -12,6 +12,9 @@ ATTRIBUTE_DICT = {
     "avgsteps": ["10avgsteps", "1avgsteps"],
     "additional_attribute": ["selfnoise", "noselfnoise", "nonoise", "muffliato"],
     "noise_level": ["nonoise", "2th", "4th", "8th", "16th", "32th", "64th"],
+    "lr": ["lr0.05", "lr0.01"],
+    "local_rounds": ["1rounds", "3rounds"],
+    "batch_size": ["batch64"],
 }
 
 
@@ -219,15 +222,15 @@ def scatter_all_experiments(
     hue, hue_ordering = get_attributes_columns(
         "hue", display_attributes, data_to_plot, orderings
     )
-    style, style_ordering = get_attributes_columns(
-        "style", display_attributes, data_to_plot, orderings
-    )
-    size, size_ordering = get_attributes_columns(
-        "size", display_attributes, data_to_plot, orderings
-    )
-    col, col_ordering = get_attributes_columns(
-        "col", display_attributes, data_to_plot, orderings
-    )
+    # style, style_ordering = get_attributes_columns(
+    #     "style", display_attributes, data_to_plot, orderings
+    # )
+    # size, size_ordering = get_attributes_columns(
+    #     "size", display_attributes, data_to_plot, orderings
+    # )
+    # col, col_ordering = get_attributes_columns(
+    #     "col", display_attributes, data_to_plot, orderings
+    # )
 
     plot = sns.jointplot(
         data=data_to_plot,
@@ -252,73 +255,80 @@ def scatter_all_experiments(
     return
 
 
-def scatter_aggregated_data(
-    data,
-    name,
-    column_name="test_acc mean",
-    x_axis_name="iteration",
-    current_attributes=None,
-    attribute_mapping=None,
-    method="mean",
-):
-    if x_axis_name == "iteration":
-        raise ValueError("Shouldn't scatter averaged data on iterations")
-    else:
-        data_to_consider = data[[x_axis_name, column_name]].dropna()
-        if method == "mean":
-            x_value = data_to_consider[x_axis_name].mean()
-            y_value = data_to_consider[column_name].mean()
-        elif method == "max":
-            x_value = data_to_consider[x_axis_name].max()
-            y_value = data_to_consider[column_name].max()
-        else:
-            raise ValueError(f"Expected method in ['mean', 'max'], got {method}")
-    if current_attributes is None or attribute_mapping is None:
-        plt.scatter(x_value, y_value, label=name)
-        return
-    color = get_style(current_attributes, attribute_mapping["color"], "color")
-    marker_style = get_style(current_attributes, attribute_mapping["marker"], "marker")
-    linewidth = get_style(
-        current_attributes, attribute_mapping["linewidth"], "linewidth"
-    )
-    plt.scatter(
-        x=x_value,
-        y=y_value,
-        label=name,
-        color=color,
-        marker=marker_style,
-        linewidth=linewidth,
-    )
-
-
 def scatter_averaged_experiments(
     data,
     experiments,
-    experiments_attributes,
     display_attributes,
     plot_name,
-    column_name="test_acc mean",
+    y_axis_name="test_acc mean",
     x_axis_name="iteration",
-    figsize=(25, 25),
     save_directory=None,
-    method="mean",
+    x_method="mean",
+    y_method="mean",
+    orderings=None,
 ):
-    plt.figure(figsize=figsize)
+    true_x_axis = x_axis_name + " " + x_method
+    true_y_axis = y_axis_name + " " + y_method
+    data_to_plot = pd.DataFrame({})
+    attributes_to_keep = select_attributes_to_keep(display_attributes, x_axis_name)
+    if "noise_level" not in attributes_to_keep:
+        attributes_to_keep.append("noise_level")
+    attributes_to_keep.remove(x_axis_name)
     for experiment in sorted(experiments):
-        scatter_aggregated_data(
-            data=data[experiment],
-            name=experiment,
-            column_name=column_name,
-            x_axis_name=x_axis_name,
-            current_attributes=experiments_attributes[experiment],
-            attribute_mapping=display_attributes,
-            method=method,
-        )
+        experiment_data = data[experiment]
+        if x_axis_name == "iteration":
+            raise ValueError("Shouldn't scatter averaged data on iterations")
+        else:
+            experiment_data = experiment_data[
+                [x_axis_name, y_axis_name, "experience_name"] + attributes_to_keep
+            ].dropna()
 
-    plt.legend()
-    plt.ylabel(f"{column_name} {method}")
-    plt.xlabel(f"{x_axis_name} {method}")
+            data_to_plot = pd.concat([data_to_plot, experiment_data])
+    data_to_plot = (
+        data_to_plot.groupby(by=["experience_name"] + attributes_to_keep)
+        .agg(["max", "mean"])
+        .reset_index()
+    )
+    data_to_plot.columns = [
+        " ".join(e) if len(e[-1]) > 0 else e[0] for e in data_to_plot.columns
+    ]
+    data_to_plot.set_index("noise_level")
+    data_to_plot.sort_values(
+        "noise_level", inplace=True, key=lambda x: pd.Series([(len(i), i) for i in x])
+    )
+
+    sns.set_theme()
+    hue, hue_ordering = get_attributes_columns(
+        "hue", display_attributes, data_to_plot, orderings
+    )
+    style, style_ordering = get_attributes_columns(
+        "style", display_attributes, data_to_plot, orderings
+    )
+    size, size_ordering = get_attributes_columns(
+        "size", display_attributes, data_to_plot, orderings
+    )
+    # col, col_ordering = get_attributes_columns(
+    #     "col", display_attributes, data_to_plot, orderings
+    # )
+
+    sns.lineplot(
+        data=data_to_plot,
+        x=true_x_axis,
+        y=true_y_axis,
+        hue=hue,
+        hue_order=hue_ordering,
+        style=style,
+        style_order=style_ordering,
+        size=size,
+        size_order=size_ordering,
+        # col=col,
+        # col_order=col_ordering,
+        markers=True,
+        sizes=(3, 5),
+        sort=False,
+    )
     plt.title(plot_name)
+    # plot.fig.subplots_adjust(top=0.9)
     if save_directory is not None:
         savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"
         print(f"Saving to {savefile}")

@@ -76,8 +76,8 @@ CONFIG_FILE = "run_configuration/" + CONFIG_NAME
 
 
 with open(CONFIG_FILE) as config:
-    config_content = config.readlines()
-    config_content = "".join(config_content)
+    config_content_lines = config.readlines()
+    config_content = "".join(config_content_lines)
     print(config_content)
 
 en.init_logging(level=logging.INFO)

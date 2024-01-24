@@ -23,3 +23,5 @@ organisation_notes/.obsidian/graph.json
 **/plotting_env/**
 **/assets/
 venv-**/**
+datasets/
+results/datasets

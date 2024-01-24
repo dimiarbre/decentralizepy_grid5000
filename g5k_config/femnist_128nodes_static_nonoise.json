@@ -1,0 +1,16 @@
+{
+    "job_name": "femnist_128nodes_static_unnoised_CNN_batch64_lr0.01_3rounds",
+    "walltime": "4:00:00",
+    "GRAPH_FILE": "128nodes_6degree.edges",
+    "NB_AGENTS": 128,
+    "NB_MACHINE": 8,
+    "NB_ITERATION": 10000,
+    "AVERAGING_STEPS": 1,
+    "TEST_AFTER": 100,
+    "EVAL_FILE": "testingPeerSamplerDynamicMultipleAvgRounds.py",
+    "LOG_LEVEL": "INFO",
+    "CONFIG_NAME": "femnist_nonoise.ini",
+    "cluster": "paravance",
+    "LOCAL_SAVE_DIR": "results/my_results/test/testing_femnist_convergence_rates",
+    "DOWNLOAD_ALL": "False"
+}

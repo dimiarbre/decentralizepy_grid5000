@@ -1,13 +1,31 @@
 import os
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
 ATTRIBUTE_DICT = {
     "network_size": ["128nodes"],
     "topology_type": ["static", "dynamic"],
     "variant": ["nonoise", "muffliato", "zerosum"],
-    "avgsteps": ["10avgsteps"],
-    "additional_attribute": ["selfnoise", "noselfnoise"],
-    "noise_level": ["2th", "4th", "8th", "16th", "32th", "64th"],
+    "avgsteps": ["10avgsteps", "1avgsteps"],
+    "additional_attribute": ["selfnoise", "noselfnoise", "nonoise", "muffliato"],
+    "noise_level": [
+        "nonoise",
+        "1th",
+        "2th",
+        "4th",
+        "8th",
+        "16th",
+        "32th",
+        "64th",
+        "128th",
+    ],
+    "lr": ["lr0.05", "lr0.01"],
+    "local_rounds": ["1rounds", "3rounds"],
+    "batch_size": ["batch64"],
+    "seed": [f"seed{val}" for val in range(90, 106)],
 }
 
 
@@ -52,10 +70,20 @@ def check_attribute(experiment_attributes, attributes_to_check):
 
 def filter_attribute(experiments_attributes, attributes_to_check):
     res = []
-    for experiment_name, experiment_attribute in experiments_attributes.items():
+    for experiment_name, experiment_attribute in sorted(experiments_attributes.items()):
         matches_attributes = check_attribute(experiment_attribute, attributes_to_check)
         if matches_attributes:
             res.append(experiment_name)
+    return sorted(res)
+
+
+def filter_attribute_list(experiment_attributes, attributes_to_check_list):
+    res = []
+    for attributes_to_check in attributes_to_check_list:
+        res = res + filter_attribute(
+            experiments_attributes=experiment_attributes,
+            attributes_to_check=attributes_to_check,
+        )
     return res
 
 
@@ -74,9 +102,17 @@ def get_style(current_attributes, mapping, option_name):
     return res
 
 
-def plot_accuracy(data, name, current_attributes=None, attribute_mapping=None):
+def plot_evolution_iterations(
+    data,
+    name,
+    column_name="test_acc mean",
+    current_attributes=None,
+    attribute_mapping=None,
+):
+    print(data.columns)
+    data_to_consider = data[column_name].dropna()
     if current_attributes is None or attribute_mapping is None:
-        plt.plot(data.index, data["test_acc mean"], label=name)
+        plt.plot(data_to_consider.index, data_to_consider, label=name)
         return
     color = get_style(current_attributes, attribute_mapping["color"], "color")
     linestyle = get_style(
@@ -86,8 +122,8 @@ def plot_accuracy(data, name, current_attributes=None, attribute_mapping=None):
         current_attributes, attribute_mapping["linewidth"], "linewidth"
     )
     plt.plot(
-        data.index,
-        data["test_acc mean"],
+        data_to_consider.index,
+        data_to_consider,
         label=name,
         color=color,
         linestyle=linestyle,
@@ -95,17 +131,313 @@ def plot_accuracy(data, name, current_attributes=None, attribute_mapping=None):
     )
 
 
+def get_attributes_columns(name, display_attributes, data_to_plot, orderings):
+    if name in display_attributes:
+        column_labels = display_attributes[name]
+        if isinstance(column_labels, list):
+            return data_to_plot[column_labels].apply(tuple, axis=1), None
+        elif isinstance(column_labels, str):
+            if orderings is not None and column_labels in orderings:
+                return column_labels, orderings[column_labels]
+            return column_labels, None
+    return None, None
+
+
+def select_attributes_to_keep(display_attributes, x_axis_name):
+    attributes_to_keep = [] if x_axis_name == "iteration" else [x_axis_name]
+    if display_attributes is not None:
+        for _, item in display_attributes.items():
+            if isinstance(item, list):
+                for attribute in item:
+                    if attribute not in attributes_to_keep:
+                        attributes_to_keep.append(attribute)
+            elif item not in attributes_to_keep:
+                attributes_to_keep.append(item)
+    return attributes_to_keep
+
+
+def plot_all_experiments(
+    data: dict[str, pd.DataFrame],
+    experiments,
+    display_attributes,
+    plot_name,
+    column_name="test_acc mean",
+    save_directory=None,
+    orderings=None,
+):
+    attributes_to_keep = select_attributes_to_keep(display_attributes, "iteration")
+    data_to_plot = pd.DataFrame({})
+    for experiment in experiments:
+        data_experiment = data[experiment][[column_name] + attributes_to_keep]
+        data_experiment = data_experiment.dropna()
+        data_to_plot = pd.concat([data_to_plot, data_experiment])
+
+    sns.set_theme()
+    hue, hue_ordering = get_attributes_columns(
+        "hue", display_attributes, data_to_plot, orderings
+    )
+    style, style_ordering = get_attributes_columns(
+        "style", display_attributes, data_to_plot, orderings
+    )
+    size, size_ordering = get_attributes_columns(
+        "size", display_attributes, data_to_plot, orderings
+    )
+    col, col_ordering = get_attributes_columns(
+        "col", display_attributes, data_to_plot, orderings
+    )
+
+    plot = sns.relplot(
+        data=data_to_plot,
+        kind="line",
+        x="iteration",
+        y=column_name,
+        hue=hue,
+        hue_order=hue_ordering,
+        style=style,
+        style_order=style_ordering,
+        size=size,
+        size_order=size_ordering,
+        col=col,
+        col_order=col_ordering,
+        sizes=(1, 5),
+    )
+    plot.fig.suptitle(plot_name)
+    plot.fig.subplots_adjust(top=0.9)
+    if save_directory is not None:
+        savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"
+        print(f"Saving to {savefile}")
+        plt.savefig(savefile)
+    return
+
+
+def scatter_all_experiments(
+    data: dict[str, pd.DataFrame],
+    experiments,
+    display_attributes,
+    plot_name,
+    x_axis_name="iteration",
+    column_name="test_acc mean",
+    save_directory=None,
+    orderings=None,
+):
+    attributes_to_keep = select_attributes_to_keep(
+        display_attributes=display_attributes, x_axis_name=x_axis_name
+    )
+    data_to_plot = pd.DataFrame({})
+    for experiment in experiments:
+        data_experiment = data[experiment][[column_name] + attributes_to_keep]
+        data_experiment = data_experiment.dropna()
+        data_to_plot = pd.concat([data_to_plot, data_experiment])
+
+    sns.set_theme()
+    hue, hue_ordering = get_attributes_columns(
+        "hue", display_attributes, data_to_plot, orderings
+    )
+    # style, style_ordering = get_attributes_columns(
+    #     "style", display_attributes, data_to_plot, orderings
+    # )
+    # size, size_ordering = get_attributes_columns(
+    #     "size", display_attributes, data_to_plot, orderings
+    # )
+    # col, col_ordering = get_attributes_columns(
+    #     "col", display_attributes, data_to_plot, orderings
+    # )
+
+    plot = sns.jointplot(
+        data=data_to_plot,
+        x=x_axis_name,
+        y=column_name,
+        hue=hue,
+        hue_order=hue_ordering,
+        # style=style,
+        # style_order=style_ordering,
+        # size=size,
+        # size_order=size_ordering,
+        # col=col,
+        # col_order=col_ordering,
+        # sizes=(5, 10),
+    )
+    plot.fig.suptitle(plot_name)
+    plot.fig.subplots_adjust(top=0.9)
+    if save_directory is not None:
+        savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"
+        print(f"Saving to {savefile}")
+        plt.savefig(savefile)
+    return
+
+
+# Function to draw an arrow from bottom right to top left
+def draw_arrow(ax, xmin, xmax, ymin, ymax, arrow_ratio):
+    arrow_start = np.array([xmax, ymin])  # Bottom right corner
+    arrow_end = np.array([xmin, ymax])  # Top left corner
+
+    true_arrow_end = arrow_start + (arrow_end - arrow_start) * arrow_ratio
+
+    # Draw the arrow
+    ax.annotate(
+        "Better",
+        true_arrow_end,
+        arrow_start,
+        arrowprops=dict(
+            # head_width=3 * xy_ratio,
+            # head_length=0.01 / xy_ratio,
+            fc="black",
+            ec="black",
+        ),
+    )
+
+
+def scatter_averaged_experiments(
+    data,
+    experiments,
+    display_attributes,
+    plot_name,
+    y_axis_name="test_acc mean",
+    x_axis_name="iteration",
+    save_directory=None,
+    x_method="mean",
+    y_method="mean",
+    orderings=None,
+):
+    if x_axis_name == "iteration":
+        raise ValueError("Shouldn't scatter averaged data on iterations")
+    true_x_axis = x_axis_name + " " + x_method
+    true_y_axis = y_axis_name + " " + y_method
+    data_to_plot = pd.DataFrame({})
+    attributes_to_keep = select_attributes_to_keep(display_attributes, x_axis_name)
+    if "noise_level" not in attributes_to_keep:
+        attributes_to_keep.append("noise_level")
+    attributes_to_keep.remove(x_axis_name)
+    for experiment in sorted(experiments):
+        experiment_data = data[experiment]
+
+        experiment_data = experiment_data[
+            [x_axis_name, y_axis_name, "experience_name"] + attributes_to_keep
+        ]
+        # experiment_data = experiment_data.dropna()
+
+        # For debugging purposes
+        aggregated_loss = experiment_data[y_axis_name]
+        max_aggregated_loss = experiment_data[y_axis_name].max()
+
+        data_to_plot = pd.concat([data_to_plot, experiment_data])
+    data_groups = data_to_plot.groupby(by=["experience_name"] + attributes_to_keep)
+    data_to_plot = data_groups.agg(["max", "mean"]).reset_index()
+    data_to_plot.columns = [
+        " ".join(e) if len(e[-1]) > 0 else e[0] for e in data_to_plot.columns
+    ]
+    data_to_plot.set_index("noise_level")
+    data_to_plot.sort_values(
+        "noise_level", inplace=True, key=lambda x: pd.Series([(len(i), i) for i in x])
+    )
+    core_data = data_to_plot[["noise_level", "variant", true_x_axis, true_y_axis]]
+    core_data = core_data[core_data["variant"] == "zerosum"]
+    print(core_data)
+
+    sns.set_theme()
+    hue, hue_ordering = get_attributes_columns(
+        "hue", display_attributes, data_to_plot, orderings
+    )
+    style, style_ordering = get_attributes_columns(
+        "style", display_attributes, data_to_plot, orderings
+    )
+    size, size_ordering = get_attributes_columns(
+        "size", display_attributes, data_to_plot, orderings
+    )
+    # col, col_ordering = get_attributes_columns(
+    #     "col", display_attributes, data_to_plot, orderings
+    # )
+
+    sns.lineplot(
+        data=data_to_plot,
+        x=true_x_axis,
+        y=true_y_axis,
+        hue=hue,
+        hue_order=hue_ordering,
+        style=style,
+        style_order=style_ordering,
+        size=size,
+        size_order=size_ordering,
+        # col=col,
+        # col_order=col_ordering,
+        markers=True,
+        sizes=(3, 5),
+        sort=False,
+    )
+    plt.title(plot_name)
+    ax = plt.gca()
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    sns.move_legend(ax, "upper left", bbox_to_anchor=(1, 1))
+
+    draw_arrow(ax, xmin, xmax, ymin, ymax, 0.1)
+
+    # plot.fig.subplots_adjust(top=0.9)
+    if save_directory is not None:
+        savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"
+        print(f"Saving to {savefile}")
+        plt.savefig(savefile)
+    return
+
+
+def fix_linkability_attack_results(experiment_name, attack_results_path):
+    expected_file_name = f"linkability_{experiment_name}.csv"
+    directories = sorted(os.listdir(attack_results_path))
+    if expected_file_name not in directories:
+        print(
+            f"Not loading attack results: {expected_file_name} was not listed with attack results in {attack_results_path}. Entire directory:\n{directories}"
+        )
+        raise FileNotFoundError(expected_file_name)
+
+    linkability_attack_df = pd.read_csv(
+        os.path.join(attack_results_path, expected_file_name)
+    )
+
+    # Fixing all the missing values/wrongly filled values
+    linkability_attack_df["linkability_top1"] = (
+        linkability_attack_df["linkability_top1_guess"]
+        == linkability_attack_df["agent"]
+    )
+
+    linkability_attack_df.reset_index(drop=True)
+    linkability_attack_df.set_index(["agent", "iteration"])
+    columns = linkability_attack_df.columns.to_list()
+    columns_losses = [column for column in columns if "loss_trainset_" in column]
+
+    linkability_attack_df["linkability_real_rank"] = np.nan
+    linkability_attack_df["linkability_real_rank"].astype("Int64", copy=False)
+    for index, row in linkability_attack_df.iterrows():
+        losses = [(int(column.split("_")[2]), row[column]) for column in columns_losses]
+        losses_sorted = sorted(losses, key=lambda x: x[1])
+        agents_sorted = [x[0] for x in losses_sorted]
+        linkability_rank = agents_sorted.index(row["agent"])
+        linkability_attack_df.at[index, "linkability_real_rank"] = linkability_rank
+
+    linkability_attack_df = linkability_attack_df.drop(columns="Unnamed: 0")
+    linkability_attack_df.to_csv(
+        os.path.join(attack_results_path, f"fixed_{expected_file_name}")
+    )
+
+    return linkability_attack_df
+
+
 if __name__ == "__main__":
     EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10"
     paths_dict = get_full_path_dict(EXPERIMENT_DIR)
     experiments_dict = get_experiments_dict(paths_dict.keys())
-    # print(experiments_dict)
-    # print(paths_dict)
+    print(experiments_dict)
+    print(paths_dict)
 
-    attributes_to_check = {
-        "variant": "zerosum",
-        "additional_attribute": ["noselfnoise"],
-    }
+    attributes_list_to_check = [
+        {
+            "variant": "zerosum",
+            "additional_attribute": ["noselfnoise"],
+        },
+        {
+            "variant": "muffliato",
+            "avgsteps": "1avgsteps",
+        },
+    ]
 
-    res = filter_attribute(experiments_dict, attributes_to_check)
+    res = filter_attribute_list(experiments_dict, attributes_list_to_check)
     print(res)

@@ -1,6 +1,6 @@
 {
-    "job_name": "zerosum_selfnoise_dynamic_128nodes_1avgsteps_2th",
-    "walltime": "4:00:00",
+    "job_name": "zerosum_selfnoise_dynamic_128nodes_1avgsteps_4th_seed105",
+    "walltime": "2:30:00",
     "GRAPH_FILE": "128nodes_6degree.edges",
     "NB_AGENTS": 128,
     "NB_MACHINE":8,
@@ -11,6 +11,8 @@
     "LOG_LEVEL" :"INFO",
     "CONFIG_NAME" :"only_training_zerosum.ini",
     "cluster" : "paravance",
-    "LOCAL_SAVE_DIR" : "results/my_results/icml_experiments/cifar10",
+    "queue":"default",
+    "STORAGE":"GROUP",
+    "LOCAL_SAVE_DIR" : "results/my_results/icml_experiments/additional_cifar10",
     "DOWNLOAD_ALL": "False"
 }

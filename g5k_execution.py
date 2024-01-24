@@ -15,18 +15,20 @@ def save_results(
 ):
     # Saves the results on the g5k global storage
     print("-" * 20 + "saving results, discarding logs if needed" + "-" * 20)
+    if download_logs:
+        print("DOWNlOADING ALL LOGS")
     with en.actions(roles=roles) as a:
         a.file(path=remote_result_dir, state="directory")
 
     # Backup the logs to main g5k storage
     # Conditional download of logs to ease the load on the remote storage
-    if download_logs:
+    if not download_logs:
         # Do not back up the graphs unless absolutely necessary (they are here for debugging purposes)
         result = en.run_command(
             f"rsync -Crvz --exclude '**/graphs/*' {remote_logs_dir}/* {remote_result_dir}/",
             roles=roles["head"],
         )
-        synchro_command = f'rsync -Crvz --exclude "ip.json" --exclude "*.ini"  {remote_logs_dir}/* {remote_result_dir}/'
+        synchro_command = f'rsync -Crvz --exclude "**/graphs/*" --exclude "ip.json" --exclude "*.ini"  {remote_logs_dir}/* {remote_result_dir}/'
     else:
         result = en.run_command(
             f"rsync -Crvz {remote_logs_dir}/* {remote_result_dir}/", roles=roles["head"]

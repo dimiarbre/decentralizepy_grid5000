@@ -11,10 +11,21 @@ ATTRIBUTE_DICT = {
     "variant": ["nonoise", "muffliato", "zerosum"],
     "avgsteps": ["10avgsteps", "1avgsteps"],
     "additional_attribute": ["selfnoise", "noselfnoise", "nonoise", "muffliato"],
-    "noise_level": ["nonoise", "2th", "4th", "8th", "16th", "32th", "64th"],
+    "noise_level": [
+        "nonoise",
+        "1th",
+        "2th",
+        "4th",
+        "8th",
+        "16th",
+        "32th",
+        "64th",
+        "128th",
+    ],
     "lr": ["lr0.05", "lr0.01"],
     "local_rounds": ["1rounds", "3rounds"],
     "batch_size": ["batch64"],
+    "seed": [f"seed{val}" for val in range(90, 106)],
 }
 
 
@@ -255,6 +266,27 @@ def scatter_all_experiments(
     return
 
 
+# Function to draw an arrow from bottom right to top left
+def draw_arrow(ax, xmin, xmax, ymin, ymax, arrow_ratio):
+    arrow_start = np.array([xmax, ymin])  # Bottom right corner
+    arrow_end = np.array([xmin, ymax])  # Top left corner
+
+    true_arrow_end = arrow_start + (arrow_end - arrow_start) * arrow_ratio
+
+    # Draw the arrow
+    ax.annotate(
+        "Better",
+        true_arrow_end,
+        arrow_start,
+        arrowprops=dict(
+            # head_width=3 * xy_ratio,
+            # head_length=0.01 / xy_ratio,
+            fc="black",
+            ec="black",
+        ),
+    )
+
+
 def scatter_averaged_experiments(
     data,
     experiments,
@@ -267,6 +299,8 @@ def scatter_averaged_experiments(
     y_method="mean",
     orderings=None,
 ):
+    if x_axis_name == "iteration":
+        raise ValueError("Shouldn't scatter averaged data on iterations")
     true_x_axis = x_axis_name + " " + x_method
     true_y_axis = y_axis_name + " " + y_method
     data_to_plot = pd.DataFrame({})
@@ -276,19 +310,19 @@ def scatter_averaged_experiments(
     attributes_to_keep.remove(x_axis_name)
     for experiment in sorted(experiments):
         experiment_data = data[experiment]
-        if x_axis_name == "iteration":
-            raise ValueError("Shouldn't scatter averaged data on iterations")
-        else:
-            experiment_data = experiment_data[
-                [x_axis_name, y_axis_name, "experience_name"] + attributes_to_keep
-            ].dropna()
 
-            data_to_plot = pd.concat([data_to_plot, experiment_data])
-    data_to_plot = (
-        data_to_plot.groupby(by=["experience_name"] + attributes_to_keep)
-        .agg(["max", "mean"])
-        .reset_index()
-    )
+        experiment_data = experiment_data[
+            [x_axis_name, y_axis_name, "experience_name"] + attributes_to_keep
+        ]
+        # experiment_data = experiment_data.dropna()
+
+        # For debugging purposes
+        aggregated_loss = experiment_data[y_axis_name]
+        max_aggregated_loss = experiment_data[y_axis_name].max()
+
+        data_to_plot = pd.concat([data_to_plot, experiment_data])
+    data_groups = data_to_plot.groupby(by=["experience_name"] + attributes_to_keep)
+    data_to_plot = data_groups.agg(["max", "mean"]).reset_index()
     data_to_plot.columns = [
         " ".join(e) if len(e[-1]) > 0 else e[0] for e in data_to_plot.columns
     ]
@@ -296,6 +330,9 @@ def scatter_averaged_experiments(
     data_to_plot.sort_values(
         "noise_level", inplace=True, key=lambda x: pd.Series([(len(i), i) for i in x])
     )
+    core_data = data_to_plot[["noise_level", "variant", true_x_axis, true_y_axis]]
+    core_data = core_data[core_data["variant"] == "zerosum"]
+    print(core_data)
 
     sns.set_theme()
     hue, hue_ordering = get_attributes_columns(
@@ -328,6 +365,13 @@ def scatter_averaged_experiments(
         sort=False,
     )
     plt.title(plot_name)
+    ax = plt.gca()
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    sns.move_legend(ax, "upper left", bbox_to_anchor=(1, 1))
+
+    draw_arrow(ax, xmin, xmax, ymin, ymax, 0.1)
+
     # plot.fig.subplots_adjust(top=0.9)
     if save_directory is not None:
         savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"

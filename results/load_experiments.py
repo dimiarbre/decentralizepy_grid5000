@@ -5,12 +5,13 @@ from typing import Optional
 import pandas as pd
 import torchvision
 from localconfig import LocalConfig
+from perform_attacks import ALL_ATTACKS
 
 from decentralizepy.datasets.CIFAR10 import LeNet
 from decentralizepy.datasets.Partitioner import DataPartitioner, KShardDataPartitioner
 
 
-def read_ini(file_path: str) -> LocalConfig:
+def read_ini(file_path: str, verbose=False) -> LocalConfig:
     """Function to load the dict configuration file.
 
     Args:
@@ -20,12 +21,22 @@ def read_ini(file_path: str) -> LocalConfig:
         LocalConfig: The loaded configuration.
     """
     config = LocalConfig(file_path)
-    for section in config:
-        print("Section: ", section)
-        for key, value in config.items(section):
-            print((key, value))
-    print(dict(config.items("DATASET")))
+    if verbose:
+        for section in config:
+            print("Section: ", section)
+            for key, value in config.items(section):
+                print((key, value, type(value)))
+        print(dict(config.items("DATASET")))
     return config
+
+
+def safe_load_int(config: LocalConfig, section: str, parameter: str):
+    value = config.get(section, parameter)
+    if not isinstance(value, int):
+        raise ValueError(
+            f"Invalid value for parameter {parameter}: expected int, got {value}"
+        )
+    return value
 
 
 def load_CIFAR10():
@@ -171,6 +182,13 @@ def list_models_path(
         f"machine{machine_id}",
         f"{agent_id}",
     )
+    if not os.path.isdir(agent_models_directory):
+        experiment_name = os.path.basename(experiment_path)
+        for attack in ALL_ATTACKS:
+            assert os.path.exists(
+                os.path.join(experiment_path, f"{attack}_{experiment_name}.csv")
+            ), f"Models missing for {experiment_name} but the {attack} attack results are not there"
+        return models_list
     for file in sorted(os.listdir(agent_models_directory)):
         file_attributes = get_model_attributes(file, agent_models_directory)
         models_list = pd.concat([models_list, file_attributes])
@@ -198,6 +216,7 @@ def get_all_models_properties(
         models_df = pd.concat(
             [models_df, list_models_path(experiment_dir, current_machine_id, agent_id)]
         )
+
     return models_df
 
 
@@ -225,7 +244,9 @@ def get_all_experiments_properties(
         )
         current_experiment_df["experiment_name"] = experiment_name
         experiment_wide_df = pd.concat([experiment_wide_df, current_experiment_df])
-
+    experiment_wide_df = experiment_wide_df.astype(
+        {"iteration": "int32", "agent": "int32", "target": "int32"}
+    )
     return experiment_wide_df
 
 

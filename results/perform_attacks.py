@@ -2,6 +2,9 @@ import concurrent.futures
 import copy
 import multiprocessing
 import os
+import shutil
+import subprocess
+import sys
 
 import load_experiments
 import numpy as np
@@ -17,6 +20,8 @@ from sklearn.metrics import (
 )
 
 from decentralizepy.datasets.CIFAR10 import LeNet
+
+ALL_ATTACKS = ["threshold", "linkability"]
 
 
 def threshold_attack(local_train_losses, test_losses, balanced=True):
@@ -196,27 +201,32 @@ def run_linkability_attack(
 
 def attack_experiment(
     experiment_df,
-    results_directory: str,
     experiment_name: str,
     model_initialiser,
     batch_size,
     dataset,
     nb_agents,
-    seed,
-    kshards,
+    experiment_path,
     device_type: str = "cpu",
     attack="threshold",
     loss_function=torch.nn.CrossEntropyLoss,
 ):
+    # Load this experiment's configuration file
+    config_file = os.path.join(experiment_path, "config.ini")
+    assert os.path.exists(config_file), f"Cannot find config file at {config_file}"
+    config = load_experiments.read_ini(config_file)
+
+    seed = load_experiments.safe_load_int(config, "DATASET", "random_seed")
+    kshards = load_experiments.safe_load_int(config, "DATASET", "shards")
+
     assert attack in ["threshold", "linkability"]
-    assert os.path.isdir(os.path.join(results_directory))
-    results_file = os.path.join(results_directory, f"{attack}_{experiment_name}.csv")
+    results_file = os.path.join(experiment_path, f"{attack}_{experiment_name}.csv")
     if os.path.exists(results_file):
-        print(f"Attacks already computed for {experiment_name}, skipping")
+        print(f"{attack}-attack already computed for {experiment_name}, skipping")
         return
 
     device = torch.device(device_type)
-    print(f"Attacking {experiment_name}:  ", end="")
+    print(f"Launching {attack}-attack on {experiment_name}.")
     trainset_partitioner, testset = load_experiments.load_dataset_partitioner(
         dataset, nb_agents, seed, kshards
     )
@@ -290,38 +300,68 @@ def attack_experiment(
     # Save the file
     print(f"Writing results to {results_file}")
     res.to_csv(results_file)
-    print(f"Finished attacking {experiment_name}")
+    print(f"Finished {attack} attack on {experiment_name}")
     return
 
 
-def main():
-    attack = "linkability"
-    batch_size = 512
+def clear_models(experiment_name: str, experiment_path: str):
+    for attack in ALL_ATTACKS:
+        results_file = os.path.join(experiment_path, f"{attack}_{experiment_name}.csv")
+        # Warning: this must be the same thing as is done in the model formating
+        if not os.path.exists(results_file):
+            print(f"Missing {attack} for experiment {experiment_name}, not clearing")
+            return False
+    cwd = subprocess.run(["pwd"], check=True)
+    print(f"Current directory: {cwd}")
+    print(f"All attacks computed for {experiment_name}: cleaning results")
+
+    for folder in os.listdir(experiment_path):
+        folder_path = os.path.join(experiment_path, folder)
+        if os.path.isdir(folder_path):
+            attacked_models_path = os.path.join(folder_path, "attacked_model")
+            if os.path.isdir(attacked_models_path):
+                print(f"Removing {attacked_models_path}")
+                shutil.rmtree(attacked_models_path, ignore_errors=True)
+
+    # files_to_remove = subprocess.run(
+    #     ["find", experiment_path, "-type", "f", "-name", "*.npy"],
+    #     check=True,
+    #     stdout=subprocess.PIPE,
+    #     stderr=subprocess.PIPE,
+    # )
+    # for file_byte in files_to_remove.stdout.splitlines():
+    #     file = file_byte.decode("utf-8")
+    #     assert os.path.isfile(file), f"Files should exist: {file}"
+    #     os.remove(file)
+
+    return True
+
+
+def main(experiments_dir, should_clear, nb_processes=10):
+    attacks = ALL_ATTACKS
+    batch_size = 256
     dataset = "CIFAR10"
     nb_agents = 128
     nb_machines = 8
-    seed = 90
-    kshards = 2
     model_architecture = LeNet
-    device_type = "cuda"
+    device_type = "cuda:0"
 
     # ---------
     # Running the main attacks on all the experiments
     # ---------
     print("---- Starting main attacks ----")
-    experiments_dir = "results/my_results/icml_experiments/cifar10/"
-    results_path = (
-        "results/my_results/icml_experiments/cifar10_attack_results_unbalanced/"
-    )
-    nb_processes = 20
+
+    # experiments_dir = "results/my_results/icml_experiments/cifar10/"
+    # experiments_dir = "results/my_results/icml_experiments/additional_cifar10/"
+
     print("Loading experiments dirs")
-    # all_experiments_df = load_experiments.get_all_experiments_properties(
-    #     experiments_dir, nb_agents, nb_machines
-    # )
+    all_experiments_df = load_experiments.get_all_experiments_properties(
+        experiments_dir, nb_agents, nb_machines
+    )
 
     # When debugging, save the dataframe and load it to avoid cold starts.
     # all_experiments_df.to_csv("experiments_df.csv")
-    all_experiments_df = pd.read_csv("experiments_df.csv")
+    # all_experiments_df = pd.read_csv("experiments_df.csv")
 
     # Use this we want to reduce the size of the experiments to consider for quick results
     # results_path = "results/my_results/icml_experiments/cifar10_attack_results_quick/"
@@ -330,49 +370,70 @@ def main():
     # ]
 
     all_experiments_df.reset_index()
-
+    print(all_experiments_df)
+    print("Loading done, starting all attacks\n")
     futures = []
     context = multiprocessing.get_context("spawn")
     with concurrent.futures.ProcessPoolExecutor(
         max_workers=nb_processes, mp_context=context
     ) as executor:
         for experiment_name in sorted(pd.unique(all_experiments_df["experiment_name"])):
-            attack_experiment(
-                copy.deepcopy(all_experiments_df),
-                results_directory=copy.deepcopy(results_path),
-                experiment_name=copy.deepcopy(experiment_name),
-                model_initialiser=copy.deepcopy(model_architecture),
-                batch_size=copy.deepcopy(batch_size),
-                dataset=copy.deepcopy(dataset),
-                nb_agents=copy.deepcopy(nb_agents),
-                seed=copy.deepcopy(seed),
-                kshards=copy.deepcopy(kshards),
-                device_type=copy.deepcopy(device_type),
-                attack=copy.deepcopy(attack),
-            )
-            break
-            future = executor.submit(
-                attack_experiment,
-                copy.deepcopy(all_experiments_df),
-                results_directory=copy.deepcopy(results_path),
-                experiment_name=copy.deepcopy(experiment_name),
-                model_initialiser=copy.deepcopy(model_architecture),
-                batch_size=copy.deepcopy(batch_size),
-                dataset=copy.deepcopy(dataset),
-                nb_agents=copy.deepcopy(nb_agents),
-                seed=copy.deepcopy(seed),
-                kshards=copy.deepcopy(kshards),
-                device_type=copy.deepcopy(device_type),
-                attack=copy.deepcopy(attack),
-            )
-            futures.append(future)
+            for attack in attacks:
+                # attack_experiment(
+                #     copy.deepcopy(all_experiments_df),
+                #     experiment_name=copy.deepcopy(experiment_name),
+                #     model_initialiser=copy.deepcopy(model_architecture),
+                #     batch_size=copy.deepcopy(batch_size),
+                #     dataset=copy.deepcopy(dataset),
+                #     nb_agents=copy.deepcopy(nb_agents),
+                #     experiment_path=os.path.join(experiments_dir, experiment_name),
+                #     device_type=copy.deepcopy(device_type),
+                #     attack=copy.deepcopy(attacks[0]),
+                # )
+                # raise RuntimeError()
+                future = executor.submit(
+                    attack_experiment,
+                    copy.deepcopy(all_experiments_df),
+                    experiment_name=copy.deepcopy(experiment_name),
+                    model_initialiser=copy.deepcopy(model_architecture),
+                    batch_size=copy.deepcopy(batch_size),
+                    dataset=copy.deepcopy(dataset),
+                    nb_agents=copy.deepcopy(nb_agents),
+                    experiment_path=os.path.join(experiments_dir, experiment_name),
+                    device_type=copy.deepcopy(device_type),
+                    attack=copy.deepcopy(attack),
+                )
+                futures.append(future)
         done, _ = concurrent.futures.wait(futures)
         results = []
         for future in done:
             results.append(future.result())
 
         print(results)
+    if should_clear:
+        print("Clearing results:")
+        for experiment_name in sorted(pd.unique(all_experiments_df["experiment_name"])):
+            clear_models(
+                experiment_name=experiment_name,
+                experiment_path=os.path.join(experiments_dir, experiment_name),
+            )
 
 
 if __name__ == "__main__":
-    main()
+    args = sys.argv
+    if len(args) >= 2:
+        experiment_dir = args[1]
+    else:
+        experiment_dir = "results/my_results/icml_experiments/cifar10/"
+    if len(args) >= 3:
+        nb_workers = int(args[2])
+        print(f"Using {nb_workers} workers")
+    else:
+        nb_workers = 20
+        print(f"nb_workers not specified, using {nb_workers} workers")
+    if len(args) >= 4:
+        assert args[3] in ["clear", "Clear"], "Argument should be 'clear'"
+        should_clear = args[3] in ["clear", "Clear"]
+    else:
+        should_clear = False
+    main(experiment_dir, should_clear, nb_workers)

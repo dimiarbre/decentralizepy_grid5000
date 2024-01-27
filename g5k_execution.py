@@ -16,7 +16,7 @@ def save_results(
     # Saves the results on the g5k global storage
     print("-" * 20 + "saving results, discarding logs if needed" + "-" * 20)
     if download_logs:
-        print("DOWNlOADING ALL LOGS")
+        print("SYNC OF ALL LOGS")
     with en.actions(roles=roles) as a:
         a.file(path=remote_result_dir, state="directory")
 
@@ -33,7 +33,7 @@ def save_results(
         result = en.run_command(
             f"rsync -Crvz {remote_logs_dir}/* {remote_result_dir}/", roles=roles["head"]
         )
-        synchro_command = f'rsync -Crvz --exclude "ip.json"  --exclude "*.log" --exclude "*.ini"  {remote_logs_dir}/* {remote_result_dir}/'
+        synchro_command = f'rsync -Crvz --exclude "ip.json" --exclude "*.ini"  {remote_logs_dir}/* {remote_result_dir}/'
 
     result = en.run_command(
         synchro_command,

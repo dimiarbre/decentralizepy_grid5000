@@ -297,6 +297,10 @@ def attack_experiment(
     columns.sort(key=lambda x: (1, "") if "loss_trainset_" in x else (0, x))
 
     res = res[columns]
+    if res.shape[0] < 10:
+        print(f"Only {res.shape[0]} in the result for {attack} - {experiment_name}")
+        print(res)
+        raise ValueError(res)
     # Save the file
     print(f"Writing results to {results_file}")
     res.to_csv(results_file)

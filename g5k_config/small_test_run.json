@@ -1,5 +1,5 @@
 {
-    "job_name": "debugging_static_avgrounds",
+    "job_name": "testing_production_queue",
     "walltime": "1:30:00",
     "GRAPH_FILE": "4_node_ring.edges",
     "NB_AGENTS": 4,
@@ -10,6 +10,8 @@
     "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",
     "LOG_LEVEL" : "DEBUG",
     "CONFIG_NAME" : "only_training_nonoise.ini",
-    "cluster" : "paravance",
+    "cluster" : "grvingt",
+    "queue":"production",
+    "STORAGE":"GROUP",
     "LOCAL_SAVE_DIR" : "results/my_results/test/testing_logging/"
 }

@@ -148,12 +148,12 @@ def run_threshold_attack(
     # We use 1 - losses to have an AUC>0.5 (works for CrossEntropyLoss)
     res = {}
     threshold_result_unbalanced = threshold_attack(
-        1 - losses_train, 1 - losses_test, balanced=False
+        -losses_train, -losses_test, balanced=False
     )
     res["roc_auc"] = threshold_result_unbalanced["roc_auc"]
 
     threshold_result_balanced = threshold_attack(
-        1 - losses_train, 1 - losses_test, balanced=True
+        -losses_train, -losses_test, balanced=True
     )
     res["roc_auc_balanced"] = threshold_result_balanced["roc_auc"]
     return pd.DataFrame(res, index=[0])

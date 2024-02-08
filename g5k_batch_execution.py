@@ -121,23 +121,31 @@ if __name__ == "__main__":
         #
         # "variant": ["nonoise", "zerosum_selfnoise", "zerosum_noselfnoise"],
         # "variant": ["nonoise", "zerosum_selfnoise"],
-        "variant": ["zerosum_selfnoise"],
+        # "variant": ["zerosum_selfnoise"],
         # "variant": ["nonoise"],
-        # "variant": ["muffliato"],
+        "variant": ["muffliato"],
         #
         # "avgsteps": ["10avgsteps"],
-        "avgsteps": ["1avgsteps"],
+        # "avgsteps": ["1avgsteps"],
+        "avgsteps": [
+            # "1avgsteps",
+            "5avgsteps",
+            # "10avgsteps",
+            # "15avgsteps",
+            # "20avgsteps",
+        ],
         #
         # "noise_level": ["128th", "64th", "32th", "16th", "8th", "4th", "2th", "1th"],
         # "noise_level": ["128th", "1th"],
-        "noise_level": ["0p75th"],
+        # "noise_level": ["0p75th"],
         # "noise_level": ["2p5th", "3th", "3p5th", "5th", "6th", "7th"],
         # "noise_level": ["2p5th", "3th", "3p5th", "5th", "6th", "7th"],
         # "noise_level": ["0p25th", "0p5th", "0p75th", "2p5th", "3th", "3p5th"],
+        "noise_level": ["4th", "16th", "64th"],
         #
         # "topology": ["static", "dynamic"],
-        # "topology": ["static"],
-        "topology": ["dynamic"],
+        "topology": ["static"],
+        # "topology": ["dynamic"],
         #
         # "random_seed": [f"seed{i}" for i in range(91, 106)],
         "random_seed": ["seed90"],

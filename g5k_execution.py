@@ -25,7 +25,7 @@ def save_results(
     if not download_logs:
         # Do not back up the graphs unless absolutely necessary (they are here for debugging purposes)
         result = en.run_command(
-            f"rsync -Crvz --exclude '**/graphs/*' {remote_logs_dir}/* {remote_result_dir}/",
+            f"rsync -Crvz --exclude '**/graphs/*' --exclude '*.log' {remote_logs_dir}/* {remote_result_dir}/",
             roles=roles["head"],
         )
         synchro_command = f'rsync -Crvz --exclude "**/graphs/*" --exclude "ip.json" --exclude "*.ini"  {remote_logs_dir}/* {remote_result_dir}/'

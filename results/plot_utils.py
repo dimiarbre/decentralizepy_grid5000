@@ -9,13 +9,22 @@ ATTRIBUTE_DICT = {
     "network_size": ["128nodes"],
     "topology_type": ["static", "dynamic"],
     "variant": ["nonoise", "muffliato", "zerosum"],
-    "avgsteps": ["10avgsteps", "1avgsteps"],
+    "avgsteps": ["20avgsteps", "15avgsteps", "10avgsteps", "5avgsteps", "1avgsteps"],
     "additional_attribute": ["selfnoise", "noselfnoise", "nonoise", "muffliato"],
     "noise_level": [
         "nonoise",
+        "0p25th",
+        "0p5th",
+        "0p75th",
         "1th",
         "2th",
+        "2p5th",
+        "3th",
+        "3p5th",
         "4th",
+        "5th",
+        "6th",
+        "7th",
         "8th",
         "16th",
         "32th",
@@ -143,7 +152,7 @@ def get_attributes_columns(name, display_attributes, data_to_plot, orderings):
     return None, None
 
 
-def select_attributes_to_keep(display_attributes, x_axis_name):
+def select_attributes_to_keep(display_attributes, x_axis_name) -> list[str]:
     attributes_to_keep = [] if x_axis_name == "iteration" else [x_axis_name]
     if display_attributes is not None:
         for _, item in display_attributes.items():
@@ -176,10 +185,20 @@ def plot_all_experiments(
     orderings=None,
 ):
     attributes_to_keep = select_attributes_to_keep(display_attributes, "iteration")
+    if "variant" not in attributes_to_keep:
+        attributes_to_keep.append("variant")
+    if "noise_level_value" not in attributes_to_keep:
+        attributes_to_keep.append("noise_level_value")
     data_to_plot = pd.DataFrame({})
     for experiment in experiments:
         data_experiment = data[experiment][[column_name] + attributes_to_keep]
         data_experiment = data_experiment.dropna()
+
+        experiment_attributes = get_attributes(experiment)
+        filename = f"{experiment_attributes['variant']}{experiment_attributes['noise_level']}_{experiment_attributes['avgsteps']}"
+        data_experiment.to_csv(
+            f"{save_directory}plot_data/entire_experiment_data/{filename}.csv"
+        )
         data_to_plot = pd.concat([data_to_plot, data_experiment])
 
     sns.set_theme()
@@ -233,7 +252,11 @@ def plot_all_experiments(
     #     print(new_legend)
     #     plot.fig.legend(handles, labels=new_legend, title="Method")
     if save_directory is not None:
-        savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"
+        filename = plot_name.replace(" ", "_")
+        data_to_plot.to_csv(
+            f"{save_directory}plot_data/entire_experiment_data/{filename}.csv"
+        )
+        savefile = f"{save_directory}{filename}.pdf"
         print(f"Saving to {savefile}")
         plt.savefig(savefile)
     return
@@ -337,6 +360,8 @@ def scatter_averaged_experiments(
     attributes_to_keep = select_attributes_to_keep(display_attributes, x_axis_name)
     top_acc_axis_name = x_axis_name + " mean to max " + y_axis_name
 
+    if "noise_level_value" not in attributes_to_keep:
+        attributes_to_keep.append("noise_level_value")
     if "noise_level" not in attributes_to_keep:
         attributes_to_keep.append("noise_level")
     attributes_to_keep.remove(x_axis_name)
@@ -373,11 +398,13 @@ def scatter_averaged_experiments(
     data_to_plot.columns = [
         " ".join(e) if len(e[-1]) > 0 else e[0] for e in data_to_plot.columns
     ]
-    data_to_plot.set_index("noise_level")
+    data_to_plot.set_index("noise_level_value")
     data_to_plot.sort_values(
-        "noise_level", inplace=True, key=lambda x: pd.Series([(len(i), i) for i in x])
+        "noise_level_value",
+        inplace=True,
+        # key=lambda x: pd.Series([(len(i), i) for i in x]),
     )
-    core_data = data_to_plot[["noise_level", "variant", true_x_axis, true_y_axis]]
+    core_data = data_to_plot[["noise_level_value", "variant", true_x_axis, true_y_axis]]
     core_data = core_data[core_data["variant"] == "zerosum"]
 
     sns.set_theme()
@@ -486,7 +513,7 @@ def plot_communication(
         experiment_data = experiment_data[
             [
                 y_axis_name,
-                "noise_level",
+                # "noise_level",
                 "noise_level_value",
                 "variant",
                 "test_acc mean",
@@ -503,9 +530,11 @@ def plot_communication(
             print(
                 f"Target accuracy of {target_acc} not reached by {experiment_name}. Defaulting to {iteration_accuracy_reached}."
             )
+            experiment_result = experiment_data.loc[[iteration_accuracy_reached]]
+            experiment_result[y_axis_name] = np.nan
         else:
             iteration_accuracy_reached = correct_accuracies.index[0]
-        experiment_result = experiment_data.loc[[iteration_accuracy_reached]]
+            experiment_result = experiment_data.loc[[iteration_accuracy_reached]]
         if experiment_result["variant"].values[0] == "nonoise":
             print(f"Found reference {experiment_name}")
             reference = experiment_result
@@ -520,19 +549,22 @@ def plot_communication(
     data_to_plot["log_" + y_axis_name] = np.log(data_to_plot[y_axis_name])
     reference["log_" + y_axis_name] = np.log(reference[y_axis_name])
 
+    data_to_plot.reset_index(drop=True)
+
     data_to_plot = data_to_plot.sort_values(
         ["variant", "topology_type", "noise_level_value"], ascending=False
     )
+    data_to_plot["low_noise_mult"] = data_to_plot["noise_level_value"] * 128 / 0.225
 
-    ax = sns.barplot(
-        data=data_to_plot,
-        x="noise_level",
-        y="log_" + y_axis_name,
-        hue="variant",
-        order=order,
-    )
+    # ax = sns.barplot(
+    #     data=data_to_plot.dropna(),
+    #     x="noise_level",
+    #     y=y_axis_name,
+    #     hue="variant",
+    #     order=order,
+    # )
 
-    ax.axhline(reference["log_" + y_axis_name].values[0])
+    # ax.axhline(reference[y_axis_name].values[0])
 
     plt.title(plot_name)
 
@@ -544,12 +576,12 @@ def plot_communication(
                 save_directory, "plot_data", f"{plot_name.replace(' ','_')}.csv"
             )
         )
-        fig = plt.gcf()
-        extent = ax.get_tightbbox(fig.canvas.get_renderer()).transformed(
-            fig.dpi_scale_trans.inverted()
-        )
-        print(f"Saving to {savefile}")
-        plt.savefig(savefile, bbox_inches=extent)
+        # fig = plt.gcf()
+        # extent = ax.get_tightbbox(fig.canvas.get_renderer()).transformed(
+        #     fig.dpi_scale_trans.inverted()
+        # )
+        # print(f"Saving to {savefile}")
+        # plt.savefig(savefile, bbox_inches=extent)
     return
 
 

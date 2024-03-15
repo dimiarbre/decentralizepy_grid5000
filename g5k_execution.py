@@ -148,6 +148,9 @@ def launch_experiment(g5k_config, decentralizepy_config, debug, is_remote):
 
     if "job_type" in g5k_config:
         job_type = g5k_config["job_type"]
+        # Disregards night constraints if the queue is production.
+        if queue == "production" and job_type in ["night", "day"]:
+            job_type = []
     else:
         job_type = []
     storage_location = "HOME"

@@ -90,6 +90,9 @@ def handle_special_parameters_values(config, parameter, parameter_value, variant
     elif parameter == "random_seed":
         config.set("DATASET", "random_seed", int(parameter_value[4:]))
         return True
+    elif parameter == "graph_degree":
+        degree = int(parameter_value[6:])
+        config.set("NODE", "graph_degree", degree)
     return False
 
 
@@ -185,15 +188,18 @@ def generate_config_files(
 
 def main():
     possible_attributes = {
-        "variant": ["nonoise", "muffliato", "zerosum", "zerosum_noselfnoise"],
+        "variant": ["nonoise", "muffliato", "zerosum_selfnoise", "zerosum_noselfnoise"],
         "noise_level": ["64th", "32th", "16th", "8th", "4th", "2th"],
         # "topology": ["static", "dynamic"],
         "random_seed": ["seed91", "seed92", "seed93"],
+        "graph_degree": ["degree12"],
     }
     all_configs = generate_config_files(possible_attributes)
     # print(all_configs)
     for name, config in all_configs.items():
         print(f"{name}")
+        print(config[1])
+        _ = input()
     return all_configs
 
 

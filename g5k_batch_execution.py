@@ -149,6 +149,8 @@ if __name__ == "__main__":
         #
         # "random_seed": [f"seed{i}" for i in range(91, 106)],
         "random_seed": ["seed90"],
+        #
+        "graph_degree": ["degree6"],
     }
     NB_WORKERS = 20
     args = sys.argv

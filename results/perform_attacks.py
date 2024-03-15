@@ -21,7 +21,8 @@ from sklearn.metrics import (
 
 from decentralizepy.datasets.CIFAR10 import LeNet
 
-ALL_ATTACKS = ["threshold", "linkability"]
+# Sort this by longest computation time first to have a better scheduling policy.
+ALL_ATTACKS = ["linkability", "threshold"]
 
 
 def threshold_attack(local_train_losses, test_losses, balanced=True):
@@ -341,6 +342,11 @@ def clear_models(experiment_name: str, experiment_path: str):
     return True
 
 
+def print_finished():
+    n = 40
+    print("-" * n + "\nAll attacks have been launched!\n" + "-" * n)
+
+
 def main(experiments_dir, should_clear, nb_processes=10):
     attacks = ALL_ATTACKS
     batch_size = 256
@@ -381,8 +387,10 @@ def main(experiments_dir, should_clear, nb_processes=10):
     with concurrent.futures.ProcessPoolExecutor(
         max_workers=nb_processes, mp_context=context
     ) as executor:
-        for experiment_name in sorted(pd.unique(all_experiments_df["experiment_name"])):
-            for attack in attacks:
+        for attack in attacks:
+            for experiment_name in sorted(
+                pd.unique(all_experiments_df["experiment_name"])
+            ):
                 # attack_experiment(
                 #     copy.deepcopy(all_experiments_df),
                 #     experiment_name=copy.deepcopy(experiment_name),
@@ -408,6 +416,7 @@ def main(experiments_dir, should_clear, nb_processes=10):
                     attack=copy.deepcopy(attack),
                 )
                 futures.append(future)
+        executor.submit(print_finished)  # To have a display when things are finished
         done, _ = concurrent.futures.wait(futures)
         results = []
         for future in done:
@@ -426,18 +435,18 @@ def main(experiments_dir, should_clear, nb_processes=10):
 if __name__ == "__main__":
     args = sys.argv
     if len(args) >= 2:
-        experiment_dir = args[1]
+        EXPERIMENT_DIR = args[1]
     else:
-        experiment_dir = "results/my_results/icml_experiments/cifar10/"
+        EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10/"
     if len(args) >= 3:
-        nb_workers = int(args[2])
-        print(f"Using {nb_workers} workers")
+        NB_WORKERS = int(args[2])
+        print(f"Using {NB_WORKERS} workers")
     else:
-        nb_workers = 20
-        print(f"nb_workers not specified, using {nb_workers} workers")
+        NB_WORKERS = 20
+        print(f"nb_workers not specified, using {NB_WORKERS} workers")
     if len(args) >= 4:
         assert args[3] in ["clear", "Clear"], "Argument should be 'clear'"
-        should_clear = args[3] in ["clear", "Clear"]
+        SHOULD_CLEAR = args[3] in ["clear", "Clear"]
     else:
-        should_clear = False
-    main(experiment_dir, should_clear, nb_workers)
+        SHOULD_CLEAR = False
+    main(EXPERIMENT_DIR, SHOULD_CLEAR, NB_WORKERS)

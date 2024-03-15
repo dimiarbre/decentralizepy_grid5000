@@ -16,7 +16,7 @@ From: ubuntu:22.04
 
     cd decentralizepy
     # pip3 install -r requirements_privacy.txt
-    pip3 install --editable .    
+    pip3 install --editable .
 
 
 %environment

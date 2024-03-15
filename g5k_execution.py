@@ -297,6 +297,7 @@ def launch_experiment(g5k_config, decentralizepy_config, debug, is_remote):
         print(
             f"Job finished normally and was deleted, main command took {(t1-t0)/(60*60):.2f} hours to run."
         )
+    return provider
 
 
 if __name__ == "__main__":
@@ -332,7 +333,7 @@ if __name__ == "__main__":
         config_content_lines = decentralizepy_config.readlines()
         decentralizepy_config_content = "".join(config_content_lines)
         print(decentralizepy_config_content)
-    launch_experiment(
+    provider = launch_experiment(
         g5k_config=g5k_config,
         decentralizepy_config=decentralizepy_config_content,
         debug=DEBUG,

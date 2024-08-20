@@ -1,14 +1,26 @@
+import json
 import os
 import time
+from collections import defaultdict
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 import torchvision
 from localconfig import LocalConfig
-from perform_attacks import ALL_ATTACKS
+from torch.utils.data import DataLoader
 
 from decentralizepy.datasets.CIFAR10 import LeNet
-from decentralizepy.datasets.Partitioner import DataPartitioner, KShardDataPartitioner
+from decentralizepy.datasets.Data import Data
+from decentralizepy.datasets.Femnist import CNN, RNET, Femnist
+from decentralizepy.datasets.Partitioner import (
+    DataPartitioner,
+    KShardDataPartitioner,
+    SimpleDataPartitioner,
+)
+
+# Sort this by longest computation time first to have a better scheduling policy.
+ALL_ATTACKS = ["linkability", "threshold"]
 
 
 def read_ini(file_path: str, verbose=False) -> LocalConfig:
@@ -57,21 +69,162 @@ def load_CIFAR10():
     return trainset, testset
 
 
+def femnist_read_file(file_path):
+    with open(file_path, "r") as inf:
+        client_data = json.load(inf)
+    return (
+        client_data["users"],
+        client_data["num_samples"],
+        client_data["user_data"],
+    )
+
+
+def femnist_read_dir(data_dir):
+    """
+    Function to read all the Femnist data files in the directory
+
+    Parameters
+    ----------
+    data_dir : str
+        Path to the folder containing the data files
+
+    Returns
+    -------
+    3-tuple
+        A tuple containing list of clients, number of samples per client,
+        and the data items per client
+
+    """
+    clients = []
+    num_samples = []
+    data = defaultdict(lambda: None)
+
+    files = os.listdir(data_dir)
+    files = [f for f in files if f.endswith(".json")]
+    for f in files:
+        file_path = os.path.join(data_dir, f)
+        u, n, d = femnist_read_file(file_path)
+        clients.extend(u)
+        num_samples.extend(n)
+        data.update(d)
+    return clients, num_samples, data
+
+
+class FemnistPartitionerWrapper(DataPartitioner):
+    """
+    This class is a wrapper of the Femnist Datapartitioner that is there to match the CIFAR10 syntax.
+    It is basically a list, with a .use() method that is the same as .__get__()
+    """
+
+    def __init__(self, data, sizes=[1.0], seed=1234):
+        self.data = data
+
+    def use(self, rank):
+        return self.data[rank]
+
+
+def load_Femnist(
+    nb_nodes,
+    sizes,
+    random_seed,
+    femnist_train_dir="datasets/Femnist/femnist/per_user_data/per_user_data/train",
+    femnist_test_dir="datasets/Femnist/femnist/data/test/test",
+    debug=False,
+):
+    """Generates and partitions the CIFAR10 dataset in the same way as the experiment does."""
+    print("Loading Femnist dataset")
+    files = os.listdir(femnist_train_dir)
+    files = [f for f in files if f.endswith(".json")]
+    files.sort()
+
+    c_len = len(files)
+
+    if sizes == None:  # Equal distribution of data among processes
+        e = c_len // nb_nodes
+        frac = e / c_len
+        sizes = [frac] * nb_nodes
+        sizes[-1] += 1.0 - frac * nb_nodes
+
+    # Load all the trainsets
+    files_partitioner = DataPartitioner(files, sizes, random_seed)
+    all_trainsets = []
+    for uid in range(0, nb_nodes):
+        if debug:
+            print(f"Loading data for client {uid}.")
+        my_clients = files_partitioner.use(uid)
+        my_train_data = {"x": [], "y": []}
+        node_clients = []
+        node_num_samples = []
+        if debug:
+            print(f"{uid} - Client Length: {c_len}")
+            print(f"{uid} - My_clients_len: {len(my_clients)}")
+        for i in range(len(my_clients)):
+            cur_file = my_clients[i]
+
+            clients, _, train_data = femnist_read_file(
+                os.path.join(femnist_train_dir, cur_file)
+            )
+            for cur_client in clients:
+                node_clients.append(cur_client)
+                my_train_data["x"].extend(train_data[cur_client]["x"])
+                my_train_data["y"].extend(train_data[cur_client]["y"])
+                node_num_samples.append(len(train_data[cur_client]["y"]))
+        node_train_x = (
+            np.array(my_train_data["x"], dtype=np.dtype("float32"))
+            .reshape(-1, 28, 28, 1)
+            .transpose(0, 3, 1, 2)
+        )
+        node_train_y = np.array(my_train_data["y"], dtype=np.dtype("int64")).reshape(-1)
+        assert node_train_x.shape[0] == node_train_y.shape[0]
+        assert node_train_x.shape[0] > 0
+        all_trainsets.append(Data(node_train_x, node_train_y))
+
+    # Load the test set
+    _, _, d = femnist_read_dir(femnist_test_dir)
+    test_x = []
+    test_y = []
+    for test_data in d.values():
+        for x in test_data["x"]:
+            test_x.append(x)
+        for y in test_data["y"]:
+            test_y.append(y)
+    test_x = (
+        np.array(test_x, dtype=np.dtype("float32"))
+        .reshape(-1, 28, 28, 1)
+        .transpose(0, 3, 1, 2)
+    )
+    test_y = np.array(test_y, dtype=np.dtype("int64")).reshape(-1)
+    assert test_x.shape[0] == test_y.shape[0]
+    assert test_x.shape[0] > 0
+
+    testset = Data(test_x, test_y)
+
+    return FemnistPartitionerWrapper(all_trainsets, [], 0), testset
+
+
 POSSIBLE_DATASETS = {
     "CIFAR10": (
         load_CIFAR10,
         10,
-        LeNet,
-    )
+    ),
+    "Femnist": (
+        load_Femnist,
+        62,
+    ),
+}
+
+POSSIBLE_MODELS = {
+    "RNET": RNET,
+    "LeNet": LeNet,
+    "CNN": CNN,
 }
 
 
-# Problem: this function is built upon the loading function of CIFAR10 - no "general" function that can be easily reused can be found.
 def load_dataset_partitioner(
     dataset_name: str,
     total_agents: int,
     seed: int,
-    shards: int,
+    shards: int | None,
     sizes: Optional[list[float]] = None,
 ):
     """Loads a data partitioner in an identical way as the experiments do
@@ -94,12 +247,24 @@ def load_dataset_partitioner(
         raise ValueError(
             f"{dataset_name} is not in the list of possible datasets: {list(POSSIBLE_DATASETS)}"
         )
-    loader, num_classes, _ = POSSIBLE_DATASETS[dataset_name]
+    loader, num_classes = POSSIBLE_DATASETS[dataset_name]
+    if dataset_name == "Femnist":
+        # Because Femnist is handled by clients, it is a very different scenario here.
+        all_trainsets, testset = load_Femnist(
+            total_agents,
+            sizes=sizes,
+            random_seed=seed,
+        )
+        return all_trainsets, testset
+    if shards is None:
+        raise ValueError(
+            f"Got shards as None for {dataset_name} when only Femnist should be the case of None Shards."
+        )
     trainset, testset = loader()
     c_len = len(trainset)
     if sizes is None:
         # Equal distribution of data among processes, from CIFAR10 and not a simplified function.
-        # Speak with Rishi about having a separate functino that performs this?
+        # Speak with Rishi about having a separate function that performs this?
         e = c_len // total_agents
         frac = e / c_len
         sizes = [frac] * total_agents
@@ -251,23 +416,26 @@ def get_all_experiments_properties(
 
 
 def main():
-    DATASET = "CIFAR10"
+    DATASET = "Femnist"
     NB_CLASSES = POSSIBLE_DATASETS[DATASET][1]
-    MODEL = POSSIBLE_DATASETS[DATASET][2]
-    NB_AGENTS = 128
+    NB_AGENTS = 8
     NB_MACHINES = 8
     train_partitioner, test_data = load_dataset_partitioner(DATASET, NB_AGENTS, 90, 2)
+    nb_data = 0
     for agent in range(NB_AGENTS):
         train_data_current_agent = train_partitioner.use(agent)
         agent_classes_trainset = get_dataset_stats(train_data_current_agent, NB_CLASSES)
         print(f"Classes for agent {agent}: {agent_classes_trainset}")
-
-    EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10/2067277_nonoise_dynamic_128nodes_1avgsteps_batch32_lr0.05_3rounds"
+        nb_data_agent = sum(agent_classes_trainset)
+        print(f"Total number of data for agent {agent}: {nb_data_agent}")
+        nb_data += nb_data_agent
+    print(f"Total data for the {DATASET} dataset: {nb_data}")
+    EXPERIMENT_DIR = "results/my_results/test/testing_femnist_convergence_rates/2079615_femnist_128nodes_static_nonoise_CNN_batch64_lr0.05_1rounds"
 
     all_models_df = get_all_models_properties(EXPERIMENT_DIR, NB_AGENTS, NB_MACHINES)
     print(all_models_df)
 
-    EXPERIMENTS_DIR = "results/my_results/icml_experiments/cifar10/"
+    EXPERIMENTS_DIR = "results/my_results/test/testing_femnist_convergence_rates"
 
     t0 = time.time()
     all_experiments_df = get_all_experiments_properties(

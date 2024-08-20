@@ -1,3 +1,4 @@
+import argparse
 import concurrent.futures
 import copy
 import multiprocessing
@@ -5,12 +6,14 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 import load_experiments
 import numpy as np
 import pandas as pd
 import torch
 from LinkabilityAttack import LinkabilityAttack
+from load_experiments import ALL_ATTACKS, POSSIBLE_MODELS
 from sklearn.metrics import (
     auc,
     average_precision_score,
@@ -20,9 +23,6 @@ from sklearn.metrics import (
 )
 
 from decentralizepy.datasets.CIFAR10 import LeNet
-
-# Sort this by longest computation time first to have a better scheduling policy.
-ALL_ATTACKS = ["linkability", "threshold"]
 
 
 def threshold_attack(local_train_losses, test_losses, balanced=True):
@@ -203,22 +203,29 @@ def run_linkability_attack(
 def attack_experiment(
     experiment_df,
     experiment_name: str,
-    model_initialiser,
-    batch_size,
-    dataset,
-    nb_agents,
+    batch_size: int,
+    nb_agents: int,
     experiment_path,
     device_type: str = "cpu",
     attack="threshold",
     loss_function=torch.nn.CrossEntropyLoss,
+    debug=False,
 ):
     # Load this experiment's configuration file
     config_file = os.path.join(experiment_path, "config.ini")
     assert os.path.exists(config_file), f"Cannot find config file at {config_file}"
     config = load_experiments.read_ini(config_file)
 
+    dataset = config.dataset.dataset_class
+
     seed = load_experiments.safe_load_int(config, "DATASET", "random_seed")
-    kshards = load_experiments.safe_load_int(config, "DATASET", "shards")
+    if dataset == "Femnist":
+        kshards = None
+    else:
+        kshards = load_experiments.safe_load_int(config, "DATASET", "shards")
+
+    model_name = config.dataset.model_class
+    model_initialiser = POSSIBLE_MODELS[model_name]
 
     assert attack in ["threshold", "linkability"]
     results_file = os.path.join(experiment_path, f"{attack}_{experiment_name}.csv")
@@ -228,6 +235,8 @@ def attack_experiment(
 
     device = torch.device(device_type)
     print(f"Launching {attack}-attack on {experiment_name}.")
+    t1 = time.time()
+
     trainset_partitioner, testset = load_experiments.load_dataset_partitioner(
         dataset, nb_agents, seed, kshards
     )
@@ -263,8 +272,9 @@ def attack_experiment(
             iteration = row["iteration"]
             model_path = row["file"]
             target = row["target"]
+            tcurrent = time.time()
             print(
-                f"Launching {attack} attack {agent}->{target} at iteration {iteration}"
+                f"Launching {attack} attack {agent}->{target} at iteration {iteration}, {(tcurrent-t1)/60:.2f} minutes taken to reach this point"
                 + " " * 10,
                 end="\r",
             )
@@ -305,7 +315,8 @@ def attack_experiment(
     # Save the file
     print(f"Writing results to {results_file}")
     res.to_csv(results_file)
-    print(f"Finished {attack} attack on {experiment_name}")
+    t2 = time.time()
+    print(f"Finished {attack} attack on {experiment_name} in {(t2-t1)/3600:.2f}hours")
     return
 
 
@@ -347,13 +358,15 @@ def print_finished():
     print("-" * n + "\nAll attacks have been launched!\n" + "-" * n)
 
 
-def main(experiments_dir, should_clear, nb_processes=10):
+def main(
+    experiments_dir,
+    should_clear,
+    nb_processes=10,
+    batch_size=256,
+    nb_agents=128,
+    nb_machines=8,
+):
     attacks = ALL_ATTACKS
-    batch_size = 256
-    dataset = "CIFAR10"
-    nb_agents = 128
-    nb_machines = 8
-    model_architecture = LeNet
     device_type = "cuda:0"
 
     # ---------
@@ -394,9 +407,7 @@ def main(experiments_dir, should_clear, nb_processes=10):
                 # attack_experiment(
                 #     copy.deepcopy(all_experiments_df),
                 #     experiment_name=copy.deepcopy(experiment_name),
-                #     model_initialiser=copy.deepcopy(model_architecture),
                 #     batch_size=copy.deepcopy(batch_size),
-                #     dataset=copy.deepcopy(dataset),
                 #     nb_agents=copy.deepcopy(nb_agents),
                 #     experiment_path=os.path.join(experiments_dir, experiment_name),
                 #     device_type=copy.deepcopy(device_type),
@@ -407,9 +418,7 @@ def main(experiments_dir, should_clear, nb_processes=10):
                     attack_experiment,
                     copy.deepcopy(all_experiments_df),
                     experiment_name=copy.deepcopy(experiment_name),
-                    model_initialiser=copy.deepcopy(model_architecture),
                     batch_size=copy.deepcopy(batch_size),
-                    dataset=copy.deepcopy(dataset),
                     nb_agents=copy.deepcopy(nb_agents),
                     experiment_path=os.path.join(experiments_dir, experiment_name),
                     device_type=copy.deepcopy(device_type),
@@ -433,20 +442,69 @@ def main(experiments_dir, should_clear, nb_processes=10):
 
 
 if __name__ == "__main__":
-    args = sys.argv
-    if len(args) >= 2:
-        EXPERIMENT_DIR = args[1]
-    else:
-        EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10/"
-    if len(args) >= 3:
-        NB_WORKERS = int(args[2])
-        print(f"Using {NB_WORKERS} workers")
-    else:
-        NB_WORKERS = 20
-        print(f"nb_workers not specified, using {NB_WORKERS} workers")
-    if len(args) >= 4:
-        assert args[3] in ["clear", "Clear"], "Argument should be 'clear'"
-        SHOULD_CLEAR = args[3] in ["clear", "Clear"]
-    else:
-        SHOULD_CLEAR = False
-    main(EXPERIMENT_DIR, SHOULD_CLEAR, NB_WORKERS)
+    parser = argparse.ArgumentParser(
+        description="Attacks saved models after simulation"
+    )
+
+    parser.add_argument(
+        "experiment_dir",
+        type=str,
+        default="results/my_results/test/testing_femnist_convergence_rates/",
+        help="Path to the experiment directory",
+    )
+
+    parser.add_argument(
+        "--nb_workers",
+        type=int,
+        default=20,
+        help="Number of workers to use (default: 20)",
+    )
+
+    parser.add_argument(
+        "--clear", action="store_true", help="Whether to clear something"
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=256,
+        help="Batch size used for attacks. Scale this for faster attacks. Default 256.",
+    )
+
+    parser.add_argument(
+        "--debug",
+        type=bool,
+        default=False,
+        help="Run in debug mode if true. Adds some printing.",
+    )
+
+    parser.add_argument(
+        "--nb_agents",
+        type=int,
+        default=128,
+        help="Number of simulated nodes in these attacks. Default 128.",
+    )
+    parser.add_argument(
+        "--nb_machines",
+        type=int,
+        default=8,
+        help="Number of physical machines used for the attacks. Default 8.",
+    )
+
+    args = parser.parse_args()
+
+    EXPERIMENT_DIR = args.experiment_dir
+    NB_WORKERS = args.nb_workers
+    SHOULD_CLEAR = args.clear
+    BATCH_SIZE = args.batch_size
+    DEBUG = args.debug
+    NB_AGENTS = args.nb_agents
+    NB_MACHINES = args.nb_machines
+
+    main(
+        experiments_dir=EXPERIMENT_DIR,
+        should_clear=SHOULD_CLEAR,
+        nb_processes=NB_WORKERS,
+        batch_size=BATCH_SIZE,
+        nb_agents=NB_AGENTS,
+        nb_machines=NB_MACHINES,
+    )

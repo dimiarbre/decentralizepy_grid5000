@@ -67,7 +67,9 @@ def read_ini(file_path: str, verbose=False) -> LocalConfig:
     return config
 
 
-def handle_special_parameters_values(config, parameter, parameter_value, variant):
+def handle_special_parameters_values(
+    config, parameter, parameter_value, variant, dataset
+):
     if parameter == "topology":
         # This will be handled later when calling the right PeerSampler
         return True
@@ -75,33 +77,50 @@ def handle_special_parameters_values(config, parameter, parameter_value, variant
         assert (
             parameter_value == variant
         )  # Sanity check, would be an error if it is not the case
-        if parameter_value not in baseconfig_mapping:
+        if (parameter_value, dataset) not in baseconfig_mapping:
             raise ValueError(
                 f"Invalid parameter value for {parameter}: {parameter_value}"
             )
-        return True
     elif parameter == "noise_level":
         if variant == "nonoise":
             raise ValueError(
                 f"Should not have {parameter} for {variant}, but got {parameter_value}"
             )
         config.set("SHARING", "noise_std", noises_mapping[parameter_value])
-        return True
     elif parameter == "random_seed":
         config.set("DATASET", "random_seed", int(parameter_value[4:]))
-        return True
     elif parameter == "graph_degree":
         degree = int(parameter_value[6:])
         config.set("NODE", "graph_degree", degree)
-    return False
+    elif parameter == "lr":
+        lr = float(parameter_value[2:])
+        config.set("OPTIMIZER_PARAMS", "lr", lr)
+    elif parameter == "rounds":
+        nb_rounds = int(parameter_value[:-6])
+        config.set("TRAIN_PARAMS", "rounds", nb_rounds)
+    else:
+        return False
+    return True
 
 
 baseconfig_mapping = {
-    "nonoise": os.path.join("run_configuration/only_training_nonoise.ini"),
-    "muffliato": os.path.join("run_configuration/only_training_muffliato.ini"),
-    "zerosum_selfnoise": os.path.join("run_configuration/only_training_zerosum.ini"),
-    "zerosum_noselfnoise": os.path.join(
+    ("nonoise", "cifar"): os.path.join("run_configuration/only_training_nonoise.ini"),
+    ("muffliato", "cifar"): os.path.join(
+        "run_configuration/only_training_muffliato.ini"
+    ),
+    ("zerosum_selfnoise", "cifar"): os.path.join(
+        "run_configuration/only_training_zerosum.ini"
+    ),
+    ("zerosum_noselfnoise", "cifar"): os.path.join(
         "run_configuration/only_training_zerosum_noselfnoise.ini"
+    ),
+    ("nonoise", "femnist"): os.path.join("run_configuration/femnist_nonoise.ini"),
+    ("muffliato", "femnist"): os.path.join("run_configuration/femnist_muffliato.ini"),
+    ("zerosum_selfnoise", "femnist"): os.path.join(
+        "run_configuration/femnist_zerosum.ini"
+    ),
+    ("zerosum_noselfnoise", "femnist"): os.path.join(
+        "run_configuration/femnist_zerosum_noselfnoise.ini"
     ),
 }
 
@@ -126,23 +145,25 @@ noises_mapping = {
 }
 
 
-def generate_config(combination_dict):
+def generate_config(combination_dict, dataset):
     variant = combination_dict["variant"]
-    config = read_ini(baseconfig_mapping[variant])
+    config = read_ini(baseconfig_mapping[(variant, dataset)])
     for parameter, parameter_value in combination_dict.items():
         is_handled = handle_special_parameters_values(
             config=config,
             parameter=parameter,
             parameter_value=parameter_value,
             variant=variant,
+            dataset=dataset,
         )
         if is_handled is None:
             print(f"Skipping configuration {combination_dict}")
             return None
         if not is_handled:
             for section in config:
-                if parameter in config.items(section):
-                    config.set(section, parameter, parameter_value)
+                for item, current_value in config.items(section):
+                    if parameter == item:
+                        config.set(section, parameter, parameter_value)
         else:
             print(f"Skipping {parameter} for {variant}")
     return config
@@ -150,6 +171,7 @@ def generate_config(combination_dict):
 
 def generate_config_files(
     attributes_values,
+    dataset,
 ) -> dict[str, tuple[dict[str, str], LocalConfig]]:
     # TODO: handle dynamic topology
     configs = {}
@@ -174,7 +196,7 @@ def generate_config_files(
     # Print the combinations
     for combination_dict in all_combinations:
         print(f"Setting {combination_dict} in configuration")
-        current_config = generate_config(combination_dict)
+        current_config = generate_config(combination_dict, dataset=dataset)
         if current_config is not None:
             configs[
                 "_".join([param_value for _, param_value in combination_dict.items()])
@@ -188,13 +210,52 @@ def generate_config_files(
 
 def main():
     possible_attributes = {
-        "variant": ["nonoise", "muffliato", "zerosum_selfnoise", "zerosum_noselfnoise"],
-        "noise_level": ["64th", "32th", "16th", "8th", "4th", "2th"],
+        "nbnodes": ["128nodes"],
+        #
+        # "variant": ["nonoise", "zerosum_selfnoise", "zerosum_noselfnoise"],
+        # "variant": ["nonoise", "zerosum_selfnoise"],
+        # "variant": ["zerosum_selfnoise"],
+        "variant": ["nonoise"],
+        # "variant": ["muffliato"],
+        #
+        # "avgsteps": ["10avgsteps"],
+        # "avgsteps": ["1avgsteps"],
+        "avgsteps": [
+            "1avgsteps",
+            # "5avgsteps",
+            # "10avgsteps",
+            # "15avgsteps",
+            # "20avgsteps",
+        ],
+        #
+        "noise_level": ["128th", "64th", "32th", "16th", "8th", "4th", "2th", "1th"],
+        # "noise_level": ["128th", "1th"],
+        # "noise_level": ["0p75th"],
+        # "noise_level": ["2p5th", "3th", "3p5th", "5th", "6th", "7th"],
+        # "noise_level": ["2p5th", "3th", "3p5th", "5th", "6th", "7th"],
+        # "noise_level": ["0p25th", "0p5th", "0p75th", "2p5th", "3th", "3p5th"],
+        # "noise_level": ["4th", "16th", "64th"],
+        #
         # "topology": ["static", "dynamic"],
-        "random_seed": ["seed91", "seed92", "seed93"],
-        "graph_degree": ["degree12"],
+        "topology": ["static"],
+        # "topology": ["dynamic"],
+        #
+        # "random_seed": [f"seed{i}" for i in range(91, 106)],
+        "random_seed": ["seed90"],
+        #
+        "graph_degree": ["degree6"],
+        #
+        # "model_class": ["LeNet"],
+        "model_class": ["RNET"],
+        # "model_class": ["CNN"],
+        #
+        "lr": ["lr0.05", "lr0.01", "lr0.10"],
+        # "lr": ["lr0.01"],
+        #
+        "rounds": ["3rounds", "1rounds"],
+        # "rounds":["3rounds"],
     }
-    all_configs = generate_config_files(possible_attributes)
+    all_configs = generate_config_files(possible_attributes, "cifar")
     # print(all_configs)
     for name, config in all_configs.items():
         print(f"{name}")

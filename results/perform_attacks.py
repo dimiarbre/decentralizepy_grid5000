@@ -1,12 +1,14 @@
 import argparse
 import concurrent.futures
 import copy
+import functools
 import multiprocessing
 import os
 import shutil
 import subprocess
 import sys
 import time
+import traceback
 
 import load_experiments
 import numpy as np
@@ -23,6 +25,21 @@ from sklearn.metrics import (
 )
 
 from decentralizepy.datasets.CIFAR10 import LeNet
+
+DEBUG = False
+
+
+def error_catching_wrapper(func):
+    @functools.wraps(func)
+    def wrapped_function(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            print(f"Error occurred in function '{func.__name__}': {e}")
+            traceback.print_exc()
+            raise e
+
+    return wrapped_function
 
 
 def threshold_attack(local_train_losses, test_losses, balanced=True):
@@ -117,7 +134,12 @@ def generate_losses(
     device=torch.device("cpu"),
 ):
     losses = torch.tensor([])
+    # Fixes inconsistent batch size
+    # See https://discuss.pytorch.org/t/error-expected-more-than-1-value-per-channel-when-training/262741
+    model.eval()
     with torch.no_grad():
+        total_correct = 0
+        total_predicted = 0
         for x, y in dataset:
             x = x.to(device)
             y = y.to(device)
@@ -125,6 +147,12 @@ def generate_losses(
             loss = loss_function(y_pred, y)
             loss = loss.to("cpu")
             losses = torch.cat([losses, loss])
+            _, predictions = torch.max(y_pred, 1)
+            for label, prediction in zip(y, predictions):
+                if label == prediction:
+                    total_correct += 1
+                total_predicted += 1
+    print(f"Accuracy: {total_correct/total_predicted*100:.2f}%")
     return losses
 
 
@@ -136,6 +164,7 @@ def run_threshold_attack(
     shapes,
     lens,
     device=torch.device("cpu"),
+    debug=False,
 ):
     load_model_from_path(
         model_path=model_path,
@@ -145,7 +174,40 @@ def run_threshold_attack(
         device=device,
     )
     losses_train = generate_losses(running_model, trainset, device=device)
+    if losses_train.isnan().any():
+        print("Founds NaNs in the train losses! Trimming...")
+        losses_train_nonan = losses_train[~losses_train.isnan()]
+        print(
+            f"Removed {len(losses_train) - len(losses_train_nonan)}/{len(losses_train)} losses!"
+        )
+        print(f"New losses: {losses_train_nonan}")
+        losses_train = losses_train_nonan
     losses_test = generate_losses(running_model, testset, device=device)
+    if losses_test.isnan().any():
+        print("Founds NaNs in the test losses! Trimming...")
+        losses_test_nonan = losses_test[~losses_test.isnan()]
+        print(
+            f"Removed {len(losses_test) - len(losses_test_nonan)}/{len(losses_test)} losses!"
+        )
+        print(f"New losses: {losses_test_nonan}")
+        losses_test = losses_test_nonan
+    if len(losses_test) == 0 or len(losses_train) == 0:
+        print(
+            f"Found a losses tensor of size 0, found lengths - train:{len(losses_train)} - test:{len(losses_test)}"
+        )
+        res = {
+            "roc_auc": torch.nan,
+            "roc_auc_balanced": torch.nan,
+        }
+        return pd.DataFrame(res, index=[0])
+
+    if debug:
+        print(
+            f"Train losses - avg:{losses_train.mean()}, std:{losses_train.std()}, min:{losses_train.min()}, max:{losses_train.max()}."
+        )
+        print(
+            f"Test losses - avg:{losses_test.mean()}, std:{losses_test.std()}, min:{losses_test.min()}, max:{losses_test.max()}."
+        )
     # We use 1 - losses to have an AUC>0.5 (works for CrossEntropyLoss)
     res = {}
     threshold_result_unbalanced = threshold_attack(
@@ -200,6 +262,7 @@ def run_linkability_attack(
     return pd.DataFrame(res, index=[0])
 
 
+@error_catching_wrapper
 def attack_experiment(
     experiment_df,
     experiment_name: str,
@@ -238,7 +301,7 @@ def attack_experiment(
     t1 = time.time()
 
     trainset_partitioner, testset = load_experiments.load_dataset_partitioner(
-        dataset, nb_agents, seed, kshards
+        dataset, nb_agents, seed, kshards, debug=DEBUG
     )
     testset = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
     res = pd.DataFrame({})
@@ -273,10 +336,14 @@ def attack_experiment(
             model_path = row["file"]
             target = row["target"]
             tcurrent = time.time()
+            if debug:
+                endline = "\n"
+            else:
+                endline = "\r"
             print(
                 f"Launching {attack} attack {agent}->{target} at iteration {iteration}, {(tcurrent-t1)/60:.2f} minutes taken to reach this point"
                 + " " * 10,
-                end="\r",
+                end=endline,
             )
             if attack == "linkability":
                 assert attack_object is not None
@@ -298,7 +365,12 @@ def attack_experiment(
                     shapes,
                     lens,
                     device=device,
+                    debug=debug,
                 )
+                if debug:
+                    print(
+                        f"it:{iteration} -  {agent}->{target}. AUC={attack_result['roc_auc']}, Balanced AUC={attack_result['roc_auc_balanced']}  "
+                    )
             attack_result["iteration"] = iteration
             attack_result["agent"] = agent
             attack_result["target"] = target
@@ -379,7 +451,7 @@ def main(
 
     print("Loading experiments dirs")
     all_experiments_df = load_experiments.get_all_experiments_properties(
-        experiments_dir, nb_agents, nb_machines
+        experiments_dir, nb_agents, nb_machines, attacks
     )
 
     # When debugging, save the dataframe and load it to avoid cold starts.
@@ -404,16 +476,18 @@ def main(
             for experiment_name in sorted(
                 pd.unique(all_experiments_df["experiment_name"])
             ):
-                # attack_experiment(
-                #     copy.deepcopy(all_experiments_df),
-                #     experiment_name=copy.deepcopy(experiment_name),
-                #     batch_size=copy.deepcopy(batch_size),
-                #     nb_agents=copy.deepcopy(nb_agents),
-                #     experiment_path=os.path.join(experiments_dir, experiment_name),
-                #     device_type=copy.deepcopy(device_type),
-                #     attack=copy.deepcopy(attacks[0]),
-                # )
-                # raise RuntimeError()
+                if DEBUG:
+                    attack_experiment(
+                        copy.deepcopy(all_experiments_df),
+                        experiment_name=copy.deepcopy(experiment_name),
+                        batch_size=copy.deepcopy(batch_size),
+                        nb_agents=copy.deepcopy(nb_agents),
+                        experiment_path=os.path.join(experiments_dir, experiment_name),
+                        device_type=copy.deepcopy(device_type),
+                        attack=copy.deepcopy(attacks[0]),
+                        debug=DEBUG,
+                    )
+                    raise RuntimeError()
                 future = executor.submit(
                     attack_experiment,
                     copy.deepcopy(all_experiments_df),
@@ -423,6 +497,7 @@ def main(
                     experiment_path=os.path.join(experiments_dir, experiment_name),
                     device_type=copy.deepcopy(device_type),
                     attack=copy.deepcopy(attack),
+                    debug=DEBUG,
                 )
                 futures.append(future)
         executor.submit(print_finished)  # To have a display when things are finished
@@ -499,6 +574,7 @@ if __name__ == "__main__":
     DEBUG = args.debug
     NB_AGENTS = args.nb_agents
     NB_MACHINES = args.nb_machines
+    ALL_ATTACKS = ["threshold"]
 
     main(
         experiments_dir=EXPERIMENT_DIR,

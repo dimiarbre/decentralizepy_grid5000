@@ -1,0 +1,6 @@
+# Script to deploy on a jupyter notebook, for a control node that will launch jobs & perform attacks.
+module load cuda; 
+python -m venv /tmp/custom_python; 
+source /tmp/custom_python/bin/activate; 
+pip install enoslib --editable decentralizepy/; 
+mkdir /tmp/logs

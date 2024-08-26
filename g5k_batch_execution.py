@@ -99,12 +99,16 @@ def launch_batch(
     all_configs = generate_config_files(possible_attributes, dataset=dataset)
     # print(all_configs)
     for name, (attributes, config) in all_configs.items():
+        print("---" * 15)
         print(f"{name}, {attributes}")
-        # print(config)
+        print(config)
         # _ = input()
+    for name, (attributes, config) in all_configs.items():
+        print("---" * 15)
+        print(f"{name}, {attributes}")
     nb_configs = len(all_configs)
     res = input(
-        f"Are you sure you want to launch {nb_configs} experiments?\n"
+        f"Are you sure you want to launch {nb_configs} experiments with {nb_workers} workers?\n"
         + f"This should take around {space_estimator(nb_configs,dataset=dataset):.2f} GB of space\ny/n -"
     )
     if res != "y":
@@ -123,7 +127,7 @@ def launch_batch(
             with open(g5k_config_path) as g5k_config_file:
                 g5k_config = json.load(g5k_config_file)
 
-            g5k_config["job_name"] = name
+            g5k_config["job_name"] = f"{dataset}_{name}"
             avgsteps_str = attributes["avgsteps"][:-8]
             assert (
                 avgsteps_str.isnumeric
@@ -149,7 +153,7 @@ def launch_batch(
                 )
             )
             # Wait a bit to increase the chance for the reservations to be in the same order
-            time.sleep(1)
+            time.sleep(2)
     print("Finished all workers!")
 
 
@@ -232,7 +236,6 @@ if __name__ == "__main__":
     IS_REMOTE = ARGS.is_remote
     job_type = ARGS.job_type
     DATASET = ARGS.dataset
-    assert DATASET in ["cifar", "femnist"]
 
     print(f"IS_REMOTE: {IS_REMOTE}, DATASET: {DATASET}, job_type: {job_type}")
     launch_batch(

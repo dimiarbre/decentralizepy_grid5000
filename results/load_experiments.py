@@ -1,14 +1,28 @@
+import json
 import os
 import time
+from collections import defaultdict
 from typing import Optional
 
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import torch
 import torchvision
 from localconfig import LocalConfig
-from perform_attacks import ALL_ATTACKS
+from torch.utils.data import DataLoader
 
 from decentralizepy.datasets.CIFAR10 import LeNet
-from decentralizepy.datasets.Partitioner import DataPartitioner, KShardDataPartitioner
+from decentralizepy.datasets.Data import Data
+from decentralizepy.datasets.Femnist import CNN, RNET, Femnist
+from decentralizepy.datasets.Partitioner import (
+    DataPartitioner,
+    KShardDataPartitioner,
+    SimpleDataPartitioner,
+)
+
+# Sort this by longest computation time first to have a better scheduling policy.
+ALL_ATTACKS = ["linkability", "threshold"]
 
 
 def read_ini(file_path: str, verbose=False) -> LocalConfig:
@@ -57,12 +71,217 @@ def load_CIFAR10():
     return trainset, testset
 
 
+def femnist_read_file(file_path):
+    with open(file_path, "r") as inf:
+        client_data = json.load(inf)
+    return (
+        client_data["users"],
+        client_data["num_samples"],
+        client_data["user_data"],
+    )
+
+
+def femnist_read_dir(data_dir):
+    """
+    Function to read all the Femnist data files in the directory
+
+    Parameters
+    ----------
+    data_dir : str
+        Path to the folder containing the data files
+
+    Returns
+    -------
+    3-tuple
+        A tuple containing list of clients, number of samples per client,
+        and the data items per client
+
+    """
+    clients = []
+    num_samples = []
+    data = defaultdict(lambda: None)
+
+    files = os.listdir(data_dir)
+    files = [f for f in files if f.endswith(".json")]
+    for f in files:
+        file_path = os.path.join(data_dir, f)
+        u, n, d = femnist_read_file(file_path)
+        clients.extend(u)
+        num_samples.extend(n)
+        data.update(d)
+    return clients, num_samples, data
+
+
+class FemnistPartitionerWrapper(DataPartitioner):
+    """
+    This class is a wrapper of the Femnist Datapartitioner that is there to match the CIFAR10 syntax.
+    It is basically a list, with a .use() method that is the same as .__get__()
+    """
+
+    def __init__(self, data, sizes=None, seed=1234):
+        self.data = data
+
+    def use(self, rank):
+        return self.data[rank]
+
+
+def load_Femnist_Testset(femnist_test_dir):
+    # Load the test set
+    _, _, d = femnist_read_dir(femnist_test_dir)
+    test_x = []
+    test_y = []
+    for test_data in d.values():
+        for x in test_data["x"]:
+            test_x.append(x)
+        for y in test_data["y"]:
+            test_y.append(y)
+    test_x = (
+        np.array(test_x, dtype=np.dtype("float32"))
+        .reshape(-1, 28, 28, 1)
+        .transpose(0, 3, 1, 2)
+    )
+    test_y = np.array(test_y, dtype=np.dtype("int64")).reshape(-1)
+    assert test_x.shape[0] == test_y.shape[0]
+    assert test_x.shape[0] > 0
+
+    return Data(test_x, test_y)
+
+
+def load_Femnist(
+    nb_nodes,
+    sizes,
+    random_seed,
+    femnist_train_dir="datasets/Femnist/femnist/per_user_data/per_user_data/train",
+    femnist_test_dir="datasets/Femnist/femnist/data/test/test",
+    debug=False,
+):
+    """Generates and partitions the CIFAR10 dataset in the same way as the experiment does."""
+    print("Loading Femnist dataset")
+    files = os.listdir(femnist_train_dir)
+    files = [f for f in files if f.endswith(".json")]
+    files.sort()
+
+    c_len = len(files)
+
+    if sizes == None:  # Equal distribution of data among processes
+        e = c_len // nb_nodes
+        frac = e / c_len
+        sizes = [frac] * nb_nodes
+        sizes[-1] += 1.0 - frac * nb_nodes
+
+    # Load all the trainsets
+    files_partitioner = DataPartitioner(files, sizes, seed=random_seed)
+    all_trainsets = []
+    for uid in range(0, nb_nodes):
+        if debug:
+            print(f"Loading data for client {uid}.")
+        my_clients = files_partitioner.use(uid)
+        my_train_data = {"x": [], "y": []}
+        node_clients = []
+        node_num_samples = []
+        if debug:
+            print(f"{uid} - Client Length: {c_len}")
+            print(f"{uid} - My_clients_len: {len(my_clients)}")
+        for cur_file in my_clients:
+
+            clients, _, train_data = femnist_read_file(
+                os.path.join(femnist_train_dir, cur_file)
+            )
+            for cur_client in clients:
+                node_clients.append(cur_client)
+                current_client_data = train_data[cur_client]
+                # f, axarr = plt.subplots(10, 1)
+                # for i in range(10):
+                #     to_plot = (
+                #         np.array(current_client_data["x"][i])
+                #         .reshape(-1, 28, 28, 1)
+                #         .transpose()
+                #     )
+                #     axarr[i].imshow(to_plot[0])
+                # plt.show()
+
+                my_train_data["x"].extend(current_client_data["x"])
+                my_train_data["y"].extend(current_client_data["y"])
+                node_num_samples.append(len(train_data[cur_client]["y"]))
+        node_train_x = (
+            np.array(my_train_data["x"], dtype=np.dtype("float32"))
+            .reshape(-1, 28, 28, 1)
+            .transpose(0, 3, 1, 2)
+        )
+        node_train_y = np.array(my_train_data["y"], dtype=np.dtype("int64")).reshape(-1)
+        assert node_train_x.shape[0] == node_train_y.shape[0]
+        assert node_train_x.shape[0] > 0
+        node_data = Data(node_train_x, node_train_y)
+        all_trainsets.append(node_data)
+
+    #     if debug:
+    #         # subplot(r,c) provide the no. of rows and columns
+    #         f, axarr = plt.subplots(10, 1)
+    #         for i in range(10):
+    #             to_plot = node_data.x[i][0]
+    #             axarr[i].imshow(to_plot)
+    # if debug:
+    #     plt.show()
+
+    testset = load_Femnist_Testset(femnist_test_dir=femnist_test_dir)
+
+    return FemnistPartitionerWrapper(all_trainsets, [], 0), testset
+
+
+def load_Femnist_labelsplit(
+    nb_nodes,
+    sizes,
+    random_seed,
+    femnist_train_dir="datasets/Femnist_labelsplit/femnist/data/train/64nodes",
+    femnist_test_dir="datasets/Femnist_labelsplit/femnist/data/test/test",
+    debug=False,
+):
+    all_data = []
+    for node in range(nb_nodes):
+        if debug:
+            print(f"Loading FEMNIST for node {node}.")
+        node_file = os.path.join(femnist_train_dir, f"data_{node}.pt")
+        node_data = torch.load(node_file)
+        temp = np.array(
+            [data[0] for data in node_data],
+            dtype=np.dtype("float32"),
+        )
+        node_data_reshaped_x = temp.reshape(-1, 28, 28, 1).transpose(0, 3, 1, 2)
+        node_data_reshaped_y = np.array(
+            [data[1] for data in node_data], dtype=np.dtype("int64")
+        ).reshape(-1)
+        node_data_reshaped = Data(node_data_reshaped_x, node_data_reshaped_y)
+        all_data.append(node_data_reshaped)
+
+        if debug:
+            # subplot(r,c) provide the no. of rows and columns
+            f, axarr = plt.subplots(10, 1)
+            for i in range(10):
+                to_plot = node_data_reshaped.x[i][0]
+                axarr[i].imshow(to_plot)
+            f.savefig(f"assets/temp_images/{node}.png")
+    if debug:
+        plt.show()
+    testset = load_Femnist_Testset(femnist_test_dir=femnist_test_dir)
+
+    return FemnistPartitionerWrapper(all_data), testset
+
+
 POSSIBLE_DATASETS = {
     "CIFAR10": (
         load_CIFAR10,
         10,
-        LeNet,
-    )
+    ),
+    "Femnist": (
+        load_Femnist,
+        62,
+    ),
+}
+
+POSSIBLE_MODELS = {
+    "RNET": RNET,
+    "LeNet": LeNet,
+    "CNN": CNN,
 }
 
 
@@ -71,8 +290,9 @@ def load_dataset_partitioner(
     dataset_name: str,
     total_agents: int,
     seed: int,
-    shards: int,
+    shards: int | None,
     sizes: Optional[list[float]] = None,
+    debug=False,
 ):
     """Loads a data partitioner in an identical way as the experiments do
 
@@ -94,7 +314,30 @@ def load_dataset_partitioner(
         raise ValueError(
             f"{dataset_name} is not in the list of possible datasets: {list(POSSIBLE_DATASETS)}"
         )
-    loader, num_classes, _ = POSSIBLE_DATASETS[dataset_name]
+    loader, num_classes = POSSIBLE_DATASETS[dataset_name]
+    if dataset_name == "Femnist":
+        # Because Femnist is handled by clients, it is a very different scenario here.
+        all_trainsets, testset = load_Femnist(
+            total_agents,
+            sizes=sizes,
+            random_seed=seed,
+            debug=debug,
+        )
+        return all_trainsets, testset
+    elif dataset_name == "FemnistLabelSplit":
+        # Since the sharding is done intresequely for optimization reasons, we load manually here
+        # TODO: specify a manual train dir to mach to other number of nodes.
+        all_trainsets, testset = load_Femnist_labelsplit(
+            nb_nodes=total_agents,
+            sizes=sizes,
+            random_seed=seed,
+            debug=debug,
+        )
+        return all_trainsets, testset
+    if shards is None:
+        raise ValueError(
+            f"Got shards as None for {dataset_name} when only Femnist should be the case of None Shards."
+        )
     trainset, testset = loader()
     c_len = len(trainset)
     if sizes is None:
@@ -161,7 +404,7 @@ def get_model_attributes(name, path):
 
 
 def list_models_path(
-    experiment_path: str, machine_id: int, agent_id: int
+    experiment_path: str, machine_id: int, agent_id: int, attacks
 ) -> pd.DataFrame:
     """Generates dataframe for a given agent and machine id
 
@@ -169,6 +412,7 @@ def list_models_path(
         experiment_path (str): The directory of the experiment
         machine_id (int): The id of the machine for the agent
         agent_id (int): The id of the agent on the machine
+        attacks (str list): list of attacks to perform
 
     Returns:
         pd.Dataframe: A dataframe containing a column for the model file,
@@ -184,7 +428,7 @@ def list_models_path(
     )
     if not os.path.isdir(agent_models_directory):
         experiment_name = os.path.basename(experiment_path)
-        for attack in ALL_ATTACKS:
+        for attack in attacks:
             assert os.path.exists(
                 os.path.join(experiment_path, f"{attack}_{experiment_name}.csv")
             ), f"Models missing for {experiment_name} but the {attack} attack results are not there"
@@ -196,7 +440,7 @@ def list_models_path(
 
 
 def get_all_models_properties(
-    experiment_dir: str, nb_agents: int, nb_machines: int
+    experiment_dir: str, nb_agents: int, nb_machines: int, attacks
 ) -> pd.DataFrame:
     """Generates a dataframe with all models path and properties (agent, iteration, target agent)
 
@@ -204,6 +448,7 @@ def get_all_models_properties(
         experiment_dir (str): The path to the experiment
         nb_agents (int): The total number of agent for the experiment
         nb_machines (int): The total number of machines for the experiment
+        attacks (string list): List of attacks to perform
 
     Returns:
         pd.Dataframe: A dataframe containing a column for the model file,
@@ -214,14 +459,17 @@ def get_all_models_properties(
         current_machine_id = agent_uid // (nb_agents // nb_machines)
         agent_id = agent_uid % (nb_agents // nb_machines)
         models_df = pd.concat(
-            [models_df, list_models_path(experiment_dir, current_machine_id, agent_id)]
+            [
+                models_df,
+                list_models_path(experiment_dir, current_machine_id, agent_id, attacks),
+            ]
         )
 
     return models_df
 
 
 def get_all_experiments_properties(
-    all_experiments_dir: str, nb_agents: int, nb_machines: int
+    all_experiments_dir: str, nb_agents: int, nb_machines: int, attacks
 ) -> pd.DataFrame:
     """Generates a dataframe with all models path and properties (agent, iteration, target agent)
     for all the experiments in a folder.
@@ -240,7 +488,10 @@ def get_all_experiments_properties(
     for experiment_name in os.listdir(all_experiments_dir):
         experiment_path = os.path.join(all_experiments_dir, experiment_name)
         current_experiment_df = get_all_models_properties(
-            experiment_path, nb_agents=nb_agents, nb_machines=nb_machines
+            experiment_path,
+            nb_agents=nb_agents,
+            nb_machines=nb_machines,
+            attacks=attacks,
         )
         current_experiment_df["experiment_name"] = experiment_name
         experiment_wide_df = pd.concat([experiment_wide_df, current_experiment_df])
@@ -253,25 +504,32 @@ def get_all_experiments_properties(
 def main():
     DATASET = "CIFAR10"
     NB_CLASSES = POSSIBLE_DATASETS[DATASET][1]
-    MODEL = POSSIBLE_DATASETS[DATASET][2]
     NB_AGENTS = 128
     NB_MACHINES = 8
-    train_partitioner, test_data = load_dataset_partitioner(DATASET, NB_AGENTS, 90, 2)
+    train_partitioner, test_data = load_dataset_partitioner(
+        DATASET, NB_AGENTS, 90, 2, debug=True
+    )
+    nb_data = 0
     for agent in range(NB_AGENTS):
         train_data_current_agent = train_partitioner.use(agent)
         agent_classes_trainset = get_dataset_stats(train_data_current_agent, NB_CLASSES)
         print(f"Classes for agent {agent}: {agent_classes_trainset}")
-
+        nb_data_agent = sum(agent_classes_trainset)
+        print(f"Total number of data for agent {agent}: {nb_data_agent}")
+        nb_data += nb_data_agent
+    print(f"Total data for the {DATASET} dataset: {nb_data}")
     EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10/2067277_nonoise_dynamic_128nodes_1avgsteps_batch32_lr0.05_3rounds"
 
-    all_models_df = get_all_models_properties(EXPERIMENT_DIR, NB_AGENTS, NB_MACHINES)
+    all_models_df = get_all_models_properties(
+        EXPERIMENT_DIR, NB_AGENTS, NB_MACHINES, ALL_ATTACKS
+    )
     print(all_models_df)
 
     EXPERIMENTS_DIR = "results/my_results/icml_experiments/cifar10/"
 
     t0 = time.time()
     all_experiments_df = get_all_experiments_properties(
-        EXPERIMENTS_DIR, NB_AGENTS, NB_MACHINES
+        EXPERIMENTS_DIR, NB_AGENTS, NB_MACHINES, ALL_ATTACKS
     )
     t1 = time.time()
     print(all_experiments_df)

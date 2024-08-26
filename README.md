@@ -84,7 +84,7 @@ To create a run configuration, go to `decentralizepy/run_configuration`, and set
 * For FEMNIST: `mia_config_femnist_muffliato.ini` or `mia_config_femnist_zerosum.ini`
 You simply need to go to the file and specify the noise level you want for the run.
 
-This file should be located in located in `decentralizepy/run_configuration`, and since decentralizepy will be mounted then the script will access this file directly.  
+This file should be located in `decentralizepy/run_configuration`, and since decentralizepy will be mounted then the script will access this file directly.  
 
 
 An important note, depending on the architecture used, there can be a TCP port conflict, with a TCP port being already used. For this case, an additional parameter can be added in the [COMMUNICATION] section if there is a TCP port conflict. The default is the following, but can be changed in the config file:

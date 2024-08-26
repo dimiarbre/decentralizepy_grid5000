@@ -43,13 +43,13 @@ g5kconfig_mapping: dict[tuple[str, str, str], str] = {
         "g5k_config/femnist_128nodes_dynamic_nonoise.json"
     ),
     ("muffliato", "static", "femnist"): os.path.join(
-        "g5k_config/femnist_128nodes_muffliato.json"
+        "g5k_config/femnist_128nodes_static_muffliato.json"
     ),
     ("muffliato", "dynamic", "femnist"): os.path.join(
         "g5k_config/femnist_128nodes_dynamic_muffliato.json"
     ),
     ("zerosum_selfnoise", "static", "femnist"): os.path.join(
-        "g5k_config/femnist_128nodes_zerosum.json"
+        "g5k_config/femnist_128nodes_static_zerosum.json"
     ),
     ("zerosum_selfnoise", "dynamic", "femnist"): os.path.join(
         "g5k_config/femnist_128nodes_dynamic_zerosum.json"
@@ -60,6 +60,32 @@ g5kconfig_mapping: dict[tuple[str, str, str], str] = {
     ("zerosum_noselfnoise", "dynamic", "femnist"): os.path.join(
         "g5k_config/femnist_128nodes_dynamic_zerosum_noselfnoise.json"
     ),
+    # FemnistLabelSplit dataset
+    # TODO: These did not change, but should be new config files in the end.
+    ("nonoise", "static", "femnistLabelSplit"): os.path.join(
+        "g5k_config/femnist_128nodes_static_nonoise.json"
+    ),
+    ("nonoise", "dynamic", "femnistLabelSplit"): os.path.join(
+        "g5k_config/femnist_128nodes_dynamic_nonoise.json"
+    ),
+    ("muffliato", "static", "femnistLabelSplit"): os.path.join(
+        "g5k_config/femnist_128nodes_static_muffliato.json"
+    ),
+    ("muffliato", "dynamic", "femnistLabelSplit"): os.path.join(
+        "g5k_config/femnist_128nodes_dynamic_muffliato.json"
+    ),
+    ("zerosum_selfnoise", "static", "femnistLabelSplit"): os.path.join(
+        "g5k_config/femnist_128nodes_static_zerosum.json"
+    ),
+    ("zerosum_selfnoise", "dynamic", "femnistLabelSplit"): os.path.join(
+        "g5k_config/femnist_128nodes_dynamic_zerosum.json"
+    ),
+    ("zerosum_noselfnoise", "static", "femnistLabelSplit"): os.path.join(
+        "g5k_config/femnist_128nodes_zerosum_noselfnoise.json"
+    ),
+    ("zerosum_noselfnoise", "dynamic", "femnistLabelSplit"): os.path.join(
+        "g5k_config/femnist_128nodes_dynamic_zerosum_noselfnoise.json"
+    ),
 }
 
 
@@ -68,6 +94,8 @@ def space_estimator(nb_experiments, dataset):
         experiment_estimation = 20
     elif dataset == "cifar":
         experiment_estimation = 1.8
+    elif dataset == "femnistLabelSplit":
+        experiment_estimation = 4  # For the quick fix of the experiments.
     else:
         raise ValueError(f"Unknown dataset type {dataset}")
     return experiment_estimation * nb_experiments
@@ -175,7 +203,7 @@ def parse_arguments():
     parser.add_argument(
         "--dataset",
         type=str,
-        choices=["cifar", "femnist"],
+        choices=["cifar", "femnist", "femnistLabelSplit"],
         default="cifar",
         help="Dataset name or path",
     )
@@ -186,26 +214,29 @@ def parse_arguments():
 
 if __name__ == "__main__":
     possible_attributes = {
-        "nbnodes": ["128nodes"],
+        # "nbnodes": ["128nodes"],
+        "nbnodes": ["64nodes"],
         #
         # "variant": ["nonoise", "zerosum_selfnoise", "zerosum_noselfnoise"],
         # "variant": ["nonoise", "zerosum_selfnoise"],
         # "variant": ["zerosum_selfnoise"],
-        "variant": ["nonoise"],
-        # "variant": ["muffliato"],
+        # "variant": ["nonoise"],
+        "variant": ["muffliato"],
         #
         # "avgsteps": ["10avgsteps"],
+        "avgsteps": ["5avgsteps"],
         # "avgsteps": ["1avgsteps"],
-        "avgsteps": [
-            "1avgsteps",
-            # "5avgsteps",
-            # "10avgsteps",
-            # "15avgsteps",
-            # "20avgsteps",
-        ],
+        # "avgsteps": [
+        #     # "1avgsteps",
+        #     # "5avgsteps",
+        #     # "10avgsteps",
+        #     # "15avgsteps",
+        #     # "20avgsteps",
+        # ],
         #
-        "noise_level": ["128th", "64th", "32th", "16th", "8th", "4th", "2th", "1th"],
-        # "noise_level": ["128th", "1th"],
+        # "noise_level": ["128th", "64th", "32th", "16th", "8th", "4th", "2th", "1th"],
+        # "noise_level": ["128th", "32th", "8th", "1th"],
+        "noise_level": ["64th", "16th", "4th", "2th"],
         # "noise_level": ["0p75th"],
         # "noise_level": ["2p5th", "3th", "3p5th", "5th", "6th", "7th"],
         # "noise_level": ["2p5th", "3th", "3p5th", "5th", "6th", "7th"],
@@ -219,17 +250,19 @@ if __name__ == "__main__":
         # "random_seed": [f"seed{i}" for i in range(91, 106)],
         "random_seed": ["seed90"],
         #
-        "graph_degree": ["degree6"],
+        # "graph_degree": ["degree6"],
+        "graph_degree": ["degree4"],
         #
         # "model_class": ["LeNet"],
         "model_class": ["RNET"],
         # "model_class": ["CNN"],
         #
-        "lr": ["lr0.05", "lr0.01", "lr0.10"],
-        # "lr": ["lr0.01"],
+        # "lr": ["lr0.05", "lr0.01", "lr0.10"],
+        "lr": ["lr0.10"],
         #
-        "rounds": ["3rounds", "1rounds"],
-        # "rounds":["3rounds"],
+        # "rounds": ["3rounds", "1rounds"],
+        # "rounds": ["3rounds"],
+        "rounds": ["1rounds"],
     }
     NB_WORKERS = 20
     ARGS = parse_arguments()

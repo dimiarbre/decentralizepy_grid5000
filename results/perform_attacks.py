@@ -282,7 +282,7 @@ def attack_experiment(
     dataset = config.dataset.dataset_class
 
     seed = load_experiments.safe_load_int(config, "DATASET", "random_seed")
-    if dataset == "Femnist":
+    if dataset == "Femnist" or dataset == "FemnistLabelSplit":
         kshards = None
     else:
         kshards = load_experiments.safe_load_int(config, "DATASET", "shards")

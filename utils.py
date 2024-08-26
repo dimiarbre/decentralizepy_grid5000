@@ -122,6 +122,18 @@ baseconfig_mapping = {
     ("zerosum_noselfnoise", "femnist"): os.path.join(
         "run_configuration/femnist_zerosum_noselfnoise.ini"
     ),
+    ("nonoise", "femnistLabelSplit"): os.path.join(
+        "run_configuration/femnist_labelsplit_nonoise.ini"
+    ),
+    ("muffliato", "femnistLabelSplit"): os.path.join(
+        "run_configuration/femnist_labelsplit_muffliato.ini"
+    ),
+    ("zerosum_selfnoise", "femnistLabelSplit"): os.path.join(
+        "run_configuration/femnist_labelsplit_zerosum.ini"
+    ),
+    ("zerosum_noselfnoise", "femnistLabelSplit"): os.path.join(
+        "run_configuration/femnist_labelsplit_zerosum_noselfnoise.ini"
+    ),
 }
 
 noises_mapping = {

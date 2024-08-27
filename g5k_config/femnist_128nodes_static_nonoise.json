@@ -10,7 +10,7 @@
     "EVAL_FILE": "testingPeerSamplerMultipleAvgRounds.py",
     "LOG_LEVEL": "INFO",
     "CONFIG_NAME": "femnist_labelsplit_nonoise.ini",
-    "cluster": "paravance",
+    "cluster": "gros",
     "queue":"default",
     "STORAGE":"GROUP",
     "LOCAL_SAVE_DIR": "results/my_results/test/testing_femnist_convergence_rates",

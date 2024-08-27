@@ -1,6 +1,6 @@
 {
     "job_name": "femnist_128nodes_static_zerosum_batch64_lr0.01_3rounds",
-    "walltime": "4:30:00",
+    "walltime": "5:30:00",
     "GRAPH_FILE": "64_4regular.edges",
     "NB_AGENTS": 64,
     "NB_MACHINE": 4,
@@ -10,7 +10,7 @@
     "EVAL_FILE": "testingPeerSamplerMultipleAvgRounds.py",
     "LOG_LEVEL": "INFO",
     "CONFIG_NAME": "femnist_labelsplit_zerosum.ini",
-    "cluster": "paravance",
+    "cluster": "gros",
     "queue":"default",
     "STORAGE":"GROUP",
     "LOCAL_SAVE_DIR": "results/my_results/test/testing_femnist_convergence_rates",

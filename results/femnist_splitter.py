@@ -151,6 +151,7 @@ def main(nb_shards):
     plt.bar([i for i in range(NB_NODES)], overall_stats)
     plt.ylabel("Number of classes")
     plt.xlabel("Node id")
+    plt.axhline(NB_CLASSES / 2)
     plt.title(f"Class repartition fo {NB_NODES} nodes and {nb_shards} shards.")
     plt.savefig(os.path.join(result_dir, "class_repartition.png"))
     return

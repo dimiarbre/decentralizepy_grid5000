@@ -260,8 +260,8 @@ def load_Femnist_labelsplit(
                 to_plot = node_data_reshaped.x[i][0]
                 axarr[i].imshow(to_plot)
             f.savefig(f"assets/temp_images/{node}.png")
-    if debug:
-        plt.show()
+            plt.close()
+
     testset = load_Femnist_Testset(femnist_test_dir=femnist_test_dir)
 
     return FemnistPartitionerWrapper(all_data), testset

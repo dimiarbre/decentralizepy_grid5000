@@ -232,7 +232,7 @@ def load_Femnist_labelsplit(
     nb_nodes,
     sizes,
     random_seed,
-    femnist_train_dir="datasets/Femnist_labelsplit/femnist/data/train/64nodes",
+    femnist_train_dir="datasets/Femnist_labelsplit/femnist/data/train/64nodes_20shards",  # TODO: fix this hack
     femnist_test_dir="datasets/Femnist_labelsplit/femnist/data/test/test",
     debug=False,
 ):
@@ -274,6 +274,10 @@ POSSIBLE_DATASETS = {
     ),
     "Femnist": (
         load_Femnist,
+        62,
+    ),
+    "FemnistLabelSplit": (
+        load_Femnist_labelsplit,
         62,
     ),
 }

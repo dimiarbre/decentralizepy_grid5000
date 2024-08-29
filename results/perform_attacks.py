@@ -132,6 +132,7 @@ def generate_losses(
     dataset,
     loss_function=torch.nn.CrossEntropyLoss(reduction="none"),
     device=torch.device("cpu"),
+    debug=False,
 ):
     losses = torch.tensor([])
     # Fixes inconsistent batch size
@@ -152,8 +153,10 @@ def generate_losses(
                 if label == prediction:
                     total_correct += 1
                 total_predicted += 1
-    print(f"Accuracy: {total_correct/total_predicted*100:.2f}%")
-    return losses
+    accuracy = total_correct / total_predicted
+    if debug:
+        print(f"Accuracy: {accuracy*100:.2f}%")
+    return (losses, accuracy)
 
 
 def run_threshold_attack(
@@ -165,6 +168,7 @@ def run_threshold_attack(
     lens,
     device=torch.device("cpu"),
     debug=False,
+    debug_name="",
 ):
     load_model_from_path(
         model_path=model_path,
@@ -173,33 +177,44 @@ def run_threshold_attack(
         lens=lens,
         device=device,
     )
-    losses_train = generate_losses(running_model, trainset, device=device)
+    losses_train, acc_train = generate_losses(
+        running_model, trainset, device=device, debug=debug
+    )
     if losses_train.isnan().any():
-        print("Founds NaNs in the train losses! Trimming...")
         losses_train_nonan = losses_train[~losses_train.isnan()]
-        print(
-            f"Removed {len(losses_train) - len(losses_train_nonan)}/{len(losses_train)} losses!"
+        percent_fail = (
+            (len(losses_train) - len(losses_train_nonan)) / len(losses_train) * 100
         )
-        print(f"New losses: {losses_train_nonan}")
+        print(
+            f"{debug_name} - Found NaNs in train loss! Removed {percent_fail:.2f}% of test losses"
+        )
         losses_train = losses_train_nonan
-    losses_test = generate_losses(running_model, testset, device=device)
+    losses_test, acc_test = generate_losses(
+        running_model, testset, device=device, debug=debug
+    )
     if losses_test.isnan().any():
-        print("Founds NaNs in the test losses! Trimming...")
         losses_test_nonan = losses_test[~losses_test.isnan()]
-        print(
-            f"Removed {len(losses_test) - len(losses_test_nonan)}/{len(losses_test)} losses!"
+        percent_fail = (
+            (len(losses_test) - len(losses_test_nonan)) / len(losses_test) * 100
         )
-        print(f"New losses: {losses_test_nonan}")
+        print(
+            f"{debug_name} - Found NaNs in test loss! Removed {percent_fail:.2f}% of test losses"
+        )
         losses_test = losses_test_nonan
     if len(losses_test) == 0 or len(losses_train) == 0:
         print(
-            f"Found a losses tensor of size 0, found lengths - train:{len(losses_train)} - test:{len(losses_test)}"
+            "Found a losses tensor of size 0, found lengths -"
+            + f" train:{len(losses_train)} - test:{len(losses_test)}"
         )
         res = {
             "roc_auc": torch.nan,
             "roc_auc_balanced": torch.nan,
         }
         return pd.DataFrame(res, index=[0])
+
+    print(
+        f"{debug_name} - Train accuracy {acc_train*100:.2f}, Test accuracy {acc_test*100:.2f} "
+    )
 
     if debug:
         print(
@@ -366,6 +381,7 @@ def attack_experiment(
                     lens,
                     device=device,
                     debug=debug,
+                    debug_name=experiment_name,
                 )
                 if debug:
                     print(

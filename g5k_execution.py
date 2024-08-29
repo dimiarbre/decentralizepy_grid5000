@@ -122,7 +122,16 @@ REMOTE_GROUP_STORAGE = "/home/dlereverend/wide_storage/dlereverend_zerosum"
 
 
 def launch_experiment(g5k_config, decentralizepy_config, debug, is_remote):
-    job_name = g5k_config["job_name"]
+    true_job_name = g5k_config["job_name"]
+    # Job names over 100 characters get a bad querry error.
+    if len(true_job_name) > 100:
+        job_name = str(hash(true_job_name))
+        job_name = job_name[
+            : min(100, len(job_name))
+        ]  # Only keep the first hundred characters to have a valid job name
+        print(f"Detected name too long {true_job_name}.\nHashed job name:{job_name}")
+    else:
+        job_name = true_job_name
     walltime = g5k_config["walltime"]
     graph_file = g5k_config["GRAPH_FILE"]
     nb_agents = g5k_config["NB_AGENTS"]  # Must be divisible by NB_MACHINE!
@@ -198,7 +207,7 @@ def launch_experiment(g5k_config, decentralizepy_config, debug, is_remote):
     job_id = result[0].stdout
     print(f"Job ID : {job_id}")
 
-    run_folder_name = f"{job_id}_{job_name}"
+    run_folder_name = f"{job_id}_{true_job_name}"
     # We need the job id for this section to work, thus we must alreay have the reservation
     if storage_location == "GROUP":
         remote_result_dir = REMOTE_GROUP_STORAGE + f"/results/{run_folder_name}"

@@ -164,5 +164,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     NB_SHARDS = args.shards
-    NB_NODES = 64
+    NB_NODES = args.nodes
     main(NB_SHARDS)

@@ -232,15 +232,16 @@ def load_Femnist_labelsplit(
     nb_nodes,
     sizes,
     random_seed,
-    femnist_train_dir="datasets/Femnist_labelsplit/femnist/data/train/64nodes_20shards",  # TODO: fix this hack
+    femnist_train_dir="datasets/Femnist_labelsplit/femnist/data/train/64nodes_10shards",  # TODO: fix this hack
     femnist_test_dir="datasets/Femnist_labelsplit/femnist/data/test/test",
     debug=False,
 ):
     all_data = []
     for node in range(nb_nodes):
+        filename = f"data_{node}.pt"
         if debug:
-            print(f"Loading FEMNIST for node {node}.")
-        node_file = os.path.join(femnist_train_dir, f"data_{node}.pt")
+            print(f"Loading FEMNISTLabelSplit {filename} for node {node}.")
+        node_file = os.path.join(femnist_train_dir, filename)
         node_data = torch.load(node_file)
         temp = np.array(
             [data[0] for data in node_data],

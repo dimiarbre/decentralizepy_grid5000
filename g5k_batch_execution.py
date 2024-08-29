@@ -234,9 +234,10 @@ if __name__ == "__main__":
         #     # "20avgsteps",
         # ],
         #
-        # "noise_level": ["128th", "64th", "32th", "16th", "8th", "4th", "2th", "1th"],
-        # "noise_level": ["128th", "32th", "8th", "1th"],
-        "noise_level": ["64th", "16th", "4th", "2th"],
+        "noise_level": ["128th", "64th", "32th", "16th", "8th", "4th", "2th", "1th"],
+        # "noise_level": ["64th", "32th", "8th", "1th"],
+        # "noise_level": ["128th", "16th", "4th", "2th"],
+        # "noise_level": ["128th"],
         # "noise_level": ["0p75th"],
         # "noise_level": ["2p5th", "3th", "3p5th", "5th", "6th", "7th"],
         # "noise_level": ["2p5th", "3th", "3p5th", "5th", "6th", "7th"],
@@ -257,12 +258,13 @@ if __name__ == "__main__":
         "model_class": ["RNET"],
         # "model_class": ["CNN"],
         #
-        # "lr": ["lr0.05", "lr0.01", "lr0.10"],
-        "lr": ["lr0.10"],
+        # "lr": ["lr0.05", "lr0.01", "lr0.10", "lr0.20"],
+        # "lr": ["lr0.10"],
+        "lr": ["lr0.01"],
         #
-        # "rounds": ["3rounds", "1rounds"],
-        # "rounds": ["3rounds"],
-        "rounds": ["1rounds"],
+        # "rounds": ["5rounds", "3rounds", "1rounds"],
+        "rounds": ["3rounds"],
+        # "rounds": ["1rounds"],
     }
     NB_WORKERS = 20
     ARGS = parse_arguments()

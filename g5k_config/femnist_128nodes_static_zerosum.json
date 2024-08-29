@@ -1,6 +1,6 @@
 {
     "job_name": "femnist_128nodes_static_zerosum_batch64_lr0.01_3rounds",
-    "walltime": "5:30:00",
+    "walltime": "4:00:00",
     "GRAPH_FILE": "64_4regular.edges",
     "NB_AGENTS": 64,
     "NB_MACHINE": 4,

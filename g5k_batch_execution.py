@@ -214,6 +214,7 @@ def parse_arguments():
 
 if __name__ == "__main__":
     possible_attributes = {
+        # "nbnodes": ["256nodes"],
         # "nbnodes": ["128nodes"],
         "nbnodes": ["64nodes"],
         #
@@ -234,10 +235,11 @@ if __name__ == "__main__":
         #     # "20avgsteps",
         # ],
         #
-        "noise_level": ["128th", "64th", "32th", "16th", "8th", "4th", "2th", "1th"],
+        # "noise_level": ["128th", "64th", "32th", "16th", "8th", "4th", "2th", "1th"],
         # "noise_level": ["64th", "32th", "8th", "1th"],
         # "noise_level": ["128th", "16th", "4th", "2th"],
         # "noise_level": ["128th"],
+        "noise_level": ["2th"],
         # "noise_level": ["0p75th"],
         # "noise_level": ["2p5th", "3th", "3p5th", "5th", "6th", "7th"],
         # "noise_level": ["2p5th", "3th", "3p5th", "5th", "6th", "7th"],
@@ -253,6 +255,7 @@ if __name__ == "__main__":
         #
         # "graph_degree": ["degree6"],
         "graph_degree": ["degree4"],
+        # "graph_degree": ["degree5"],
         #
         # "model_class": ["LeNet"],
         "model_class": ["RNET"],

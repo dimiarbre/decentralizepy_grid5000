@@ -186,7 +186,7 @@ def run_threshold_attack(
             (len(losses_train) - len(losses_train_nonan)) / len(losses_train) * 100
         )
         print(
-            f"{debug_name} - Found NaNs in train loss! Removed {percent_fail:.2f}% of test losses"
+            f"{debug_name} - Found NaNs in train loss! Removed {percent_fail:.2f}% of train losses"
         )
         losses_train = losses_train_nonan
     losses_test, acc_test = generate_losses(
@@ -202,10 +202,10 @@ def run_threshold_attack(
         )
         losses_test = losses_test_nonan
     if len(losses_test) == 0 or len(losses_train) == 0:
-        print(
-            "Found a losses tensor of size 0, found lengths -"
-            + f" train:{len(losses_train)} - test:{len(losses_test)}"
-        )
+        # print(
+        #     "Found a losses tensor of size 0, found lengths -"
+        #     + f" train:{len(losses_train)} - test:{len(losses_test)}"
+        # )
         res = {
             "roc_auc": torch.nan,
             "roc_auc_balanced": torch.nan,

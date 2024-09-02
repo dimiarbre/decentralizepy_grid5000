@@ -1,5 +1,5 @@
 {
-    "job_name": "testing_production_queue",
+    "job_name": "testing_noisefixes",
     "walltime": "1:30:00",
     "GRAPH_FILE": "4_node_ring.edges",
     "NB_AGENTS": 4,
@@ -9,9 +9,9 @@
     "TEST_AFTER" :50,
     "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",
     "LOG_LEVEL" : "DEBUG",
-    "CONFIG_NAME" : "only_training_nonoise.ini",
-    "cluster" : "grvingt",
-    "queue":"production",
+    "CONFIG_NAME" : "only_training_zerosum.ini",
+    "cluster" : "paravance",
+    "queue":"default",
     "STORAGE":"GROUP",
     "LOCAL_SAVE_DIR" : "results/my_results/test/testing_logging/"
 }

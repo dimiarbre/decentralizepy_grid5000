@@ -10,56 +10,33 @@ import time
 from g5k_execution import launch_experiment
 from utils import generate_config_files
 
-g5kconfig_mapping: dict[tuple[str, str, str], str] = {
-    ("nonoise", "static", "cifar"): os.path.join(
-        "g5k_config/training_128nodes_nonoise.json"
-    ),
-    ("nonoise", "dynamic", "cifar"): os.path.join(
-        "g5k_config/training_128nodes_dynamic_nonoise.json"
-    ),
-    ("muffliato", "static", "cifar"): os.path.join(
-        "g5k_config/training_128nodes_muffliato.json"
-    ),
-    ("muffliato", "dynamic", "cifar"): os.path.join(
-        "g5k_config/training_128nodes_dynamic_muffliato.json"
-    ),
-    ("zerosum_selfnoise", "static", "cifar"): os.path.join(
+g5kconfig_mapping: dict[tuple[str, str], str] = {
+    ("nonoise", "cifar"): os.path.join("g5k_config/training_128nodes_nonoise.json"),
+    ("muffliato", "cifar"): os.path.join("g5k_config/training_128nodes_muffliato.json"),
+    ("zerosum_selfnoise", "cifar"): os.path.join(
         "g5k_config/training_128nodes_zerosum.json"
     ),
-    ("zerosum_selfnoise", "dynamic", "cifar"): os.path.join(
-        "g5k_config/training_128nodes_dynamic_zerosum.json"
-    ),
-    ("zerosum_noselfnoise", "static", "cifar"): os.path.join(
+    ("zerosum_noselfnoise", "cifar"): os.path.join(
         "g5k_config/training_128nodes_zerosum_noselfnoise.json"
     ),
-    ("zerosum_noselfnoise", "dynamic", "cifar"): os.path.join(
-        "g5k_config/training_128nodes_dynamic_zerosum_noselfnoise.json"
-    ),
     # Femnist dataset
-    ("nonoise", "static", "femnist"): os.path.join(
+    ("nonoise", "femnist"): os.path.join(
         "g5k_config/femnist_128nodes_static_nonoise.json"
     ),
-    ("nonoise", "dynamic", "femnist"): os.path.join(
-        "g5k_config/femnist_128nodes_dynamic_nonoise.json"
-    ),
-    ("muffliato", "static", "femnist"): os.path.join(
+    ("muffliato", "femnist"): os.path.join(
         "g5k_config/femnist_128nodes_muffliato.json"
     ),
-    ("muffliato", "dynamic", "femnist"): os.path.join(
-        "g5k_config/femnist_128nodes_dynamic_muffliato.json"
-    ),
-    ("zerosum_selfnoise", "static", "femnist"): os.path.join(
+    ("zerosum_selfnoise", "femnist"): os.path.join(
         "g5k_config/femnist_128nodes_zerosum.json"
     ),
-    ("zerosum_selfnoise", "dynamic", "femnist"): os.path.join(
-        "g5k_config/femnist_128nodes_dynamic_zerosum.json"
-    ),
-    ("zerosum_noselfnoise", "static", "femnist"): os.path.join(
+    ("zerosum_noselfnoise", "femnist"): os.path.join(
         "g5k_config/femnist_128nodes_zerosum_noselfnoise.json"
     ),
-    ("zerosum_noselfnoise", "dynamic", "femnist"): os.path.join(
-        "g5k_config/femnist_128nodes_dynamic_zerosum_noselfnoise.json"
-    ),
+}
+
+toplogy_dynamicity_mapping: dict[str, str] = {
+    "static": "testingPeerSamplerMultipleAvgRounds.py",
+    "dynamic": "testingPeerSamplerDynamicMultipleAvgRounds.py",
 }
 
 
@@ -121,13 +98,13 @@ def launch_batch(
         max_workers=nb_workers, mp_context=context
     ) as executor:
         for name, (attributes, decentralizepy_config) in all_configs.items():
-            g5k_config_path = g5kconfig_mapping[
-                (attributes["variant"], attributes["topology"], dataset)
-            ]
+            toplogy_dynamicity = attributes["topology"]
+            g5k_config_path = g5kconfig_mapping[(attributes["variant"], dataset)]
             with open(g5k_config_path) as g5k_config_file:
                 g5k_config = json.load(g5k_config_file)
 
             g5k_config["job_name"] = f"{dataset}_{name}"
+            g5k_config["EVAL_FILE"] = toplogy_dynamicity_mapping[toplogy_dynamicity]
             avgsteps_str = attributes["avgsteps"][:-8]
             assert (
                 avgsteps_str.isnumeric
@@ -178,6 +155,13 @@ def parse_arguments():
         choices=["cifar", "femnist"],
         default="cifar",
         help="Dataset name or path",
+    )
+
+    parser.add_argument(
+        "--nb_workers",
+        type=int,
+        default=20,
+        help="Number of threads that launches attacks. Also the number of simultaneous jobs.",
     )
 
     args = parser.parse_args()
@@ -231,8 +215,8 @@ if __name__ == "__main__":
         "rounds": ["3rounds", "1rounds"],
         # "rounds":["3rounds"],
     }
-    NB_WORKERS = 20
     ARGS = parse_arguments()
+    NB_WORKERS = ARGS.nb_workers
     IS_REMOTE = ARGS.is_remote
     job_type = ARGS.job_type
     DATASET = ARGS.dataset

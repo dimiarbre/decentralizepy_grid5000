@@ -1,6 +1,7 @@
 import argparse
 import concurrent.futures
 import copy
+import datetime
 import json
 import multiprocessing
 import os
@@ -59,13 +60,16 @@ def launch_experiment_wrapper(
     print(
         f"Launching {g5k_config} and config {decentralizepy_config}, debug={debug} and is_remote={is_remote}"
     )
-    launch_experiment(
+    _, duration = launch_experiment(
         g5k_config=g5k_config,
         decentralizepy_config=decentralizepy_config,
         debug=debug,
         is_remote=is_remote,
     )
+    sys.stdout = sys.__stdout__
     os.remove(log_file_path)
+    time_delta = datetime.timedelta(seconds=duration)
+    print(f"Finished {name} in {time_delta}")
 
 
 def launch_batch(

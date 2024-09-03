@@ -24,12 +24,10 @@ def save_results(
     # Backup the logs to main g5k storage
     # Conditional download of logs to ease the load on the remote storage
     if not download_logs:
+        command = f"rsync -Crvz --exclude '**/graphs/*' --exclude '*.log' {remote_logs_dir}/* {remote_result_dir}/"
         # Do not back up the graphs unless absolutely necessary (they are here for debugging purposes)
-        result = en.run_command(
-            f"rsync -Crvz --exclude '**/graphs/*' --exclude '*.log' {remote_logs_dir}/* {remote_result_dir}/",
-            roles=roles["head"],
-        )
-        synchro_command = f'rsync -Crvz --exclude "**/graphs/*" --exclude "ip.json" --exclude "*.ini"  {remote_logs_dir}/* {remote_result_dir}/'
+        result = en.run_command(command, roles=roles["head"])
+        synchro_command = f'rsync -Crvz --exclude "**/graphs/*" --exclude "ip.json" --exclude "*.ini" --exclude "*.log"  {remote_logs_dir}/* {remote_result_dir}/'
     else:
         result = en.run_command(
             f"rsync -Crvz {remote_logs_dir}/* {remote_result_dir}/", roles=roles["head"]
@@ -199,6 +197,8 @@ def launch_experiment(g5k_config, decentralizepy_config, debug, is_remote):
     provider = en.G5k(conf)
     roles, networks = provider.init()
 
+    time_start = time.time()
+
     cpu_info = en.run_command("lscpu; cat /proc/cpuinfo", roles=roles)
 
     # Install glances for profiling
@@ -311,7 +311,9 @@ def launch_experiment(g5k_config, decentralizepy_config, debug, is_remote):
         print(
             f"Job finished normally and was deleted, main command took {(t1-t0)/(60*60):.2f} hours to run."
         )
-    return provider
+    time_finish = time.time()
+    duration = time_finish - time_start
+    return provider, duration
 
 
 if __name__ == "__main__":
@@ -348,7 +350,7 @@ if __name__ == "__main__":
         config_content_lines = decentralizepy_config.readlines()
         decentralizepy_config_content = "".join(config_content_lines)
         print(decentralizepy_config_content)
-    provider = launch_experiment(
+    provider, duration = launch_experiment(
         g5k_config=g5k_config,
         decentralizepy_config=decentralizepy_config_content,
         debug=DEBUG,

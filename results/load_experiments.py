@@ -389,6 +389,32 @@ def get_dataset_stats_batch(dataset, nb_classes: int) -> list[int]:
     return classes
 
 
+def deserialized_model(weights, model, shapes, lens):
+    """
+    Convert received dict to state_dict.
+
+    Parameters
+    ----------
+    m : dict
+        received dict
+
+    Returns
+    -------
+    state_dict
+        state_dict of received
+
+    """
+    state_dict = dict()
+    start_index = 0
+    for i, key in enumerate(model.state_dict()):
+        end_index = start_index + lens[i]
+        state_dict[key] = torch.from_numpy(
+            weights[start_index:end_index].reshape(shapes[i])
+        )
+        start_index = end_index
+    return state_dict
+
+
 def get_model_attributes(name, path):
     parsed_model = name.split("_")
     iteration = int(parsed_model[1][2:])

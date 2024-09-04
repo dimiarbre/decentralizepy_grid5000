@@ -94,15 +94,6 @@ def generate_shapes(model):
     return shapes, lens
 
 
-def load_model_from_path(model_path, model, shapes, lens, device=None):
-    model_weigths = np.load(model_path)
-    model.load_state_dict(
-        load_experiments.deserialized_model(model_weigths, model, shapes, lens)
-    )
-    if device is not None:
-        model.to(device)
-
-
 def generate_losses(
     model,
     dataset,
@@ -146,7 +137,7 @@ def run_threshold_attack(
     debug=False,
     debug_name="",
 ):
-    load_model_from_path(
+    load_experiments.load_model_from_path(
         model_path=model_path,
         model=running_model,
         shapes=shapes,
@@ -222,7 +213,7 @@ def run_linkability_attack(
     lens,
     device,
 ):
-    load_model_from_path(
+    load_experiments.load_model_from_path(
         model_path=model_path,
         model=running_model,
         shapes=shapes,

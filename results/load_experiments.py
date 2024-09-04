@@ -415,6 +415,13 @@ def deserialized_model(weights, model, shapes, lens):
     return state_dict
 
 
+def load_model_from_path(model_path, model, shapes, lens, device=None):
+    model_weigths = np.load(model_path)
+    model.load_state_dict(deserialized_model(model_weigths, model, shapes, lens))
+    if device is not None:
+        model.to(device)
+
+
 def get_model_attributes(name, path):
     parsed_model = name.split("_")
     iteration = int(parsed_model[1][2:])

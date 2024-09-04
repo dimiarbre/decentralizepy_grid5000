@@ -2,6 +2,7 @@ import argparse
 import concurrent.futures
 import copy
 import functools
+import heapq
 import multiprocessing
 import os
 import shutil
@@ -40,6 +41,36 @@ def error_catching_wrapper(func):
             raise e
 
     return wrapped_function
+
+
+def get_biased_threshold_acc(train_losses, test_losses, top_kth: list[int]):
+
+    max_k = max(top_kth)
+    paired_train = [(loss, 1) for loss in train_losses]
+    paired_test = [(loss, 0) for loss in test_losses]
+
+    merged_list = paired_train + paired_test
+
+    if max_k > len(paired_train):
+        print(
+            f"\n---------\nWARNING: using window of size {max_k} when the training set only has {len(paired_train)} elements!\n-------"
+        )
+    # Remove elements when the window is bigger than the
+    fixed_top_kth = [k for k in top_kth if k <= len(merged_list)]
+
+    max_k = max(fixed_top_kth)
+
+    lowest_losses_max_k = heapq.nsmallest(max_k, merged_list)
+
+    res = {}
+    for k in top_kth:
+        window = lowest_losses_max_k[:k]
+        nb_success = sum([origin for (_, origin) in window])
+        success_rate = nb_success / k
+        assert success_rate <= 1
+        res[f"top{k}_acc"] = success_rate
+
+    return res
 
 
 def threshold_attack(local_train_losses, test_losses, balanced=True):
@@ -136,7 +167,22 @@ def run_threshold_attack(
     device=torch.device("cpu"),
     debug=False,
     debug_name="",
+    attack="threshold",
 ):
+    both_attacks = False
+    default_res_threshold = {
+        "roc_auc": torch.nan,
+        "roc_auc_balanced": torch.nan,
+    }
+    default_res_biasedthreshold = {f"top{k}-acc": torch.nan for k in ALL_TOPK_ATTACKS}
+    if "+" in attack:
+        assert attack == "threshold+biasedthreshold"
+        both_attacks = True
+    elif attack == "threshold" or attack == "biasedthreshold":
+        both_attacks = False
+    else:
+        raise ValueError(f"Unknown attack {attack}")
+
     load_experiments.load_model_from_path(
         model_path=model_path,
         model=running_model,
@@ -173,11 +219,11 @@ def run_threshold_attack(
         #     "Found a losses tensor of size 0, found lengths -"
         #     + f" train:{len(losses_train)} - test:{len(losses_test)}"
         # )
-        res = {
-            "roc_auc": torch.nan,
-            "roc_auc_balanced": torch.nan,
+
+        return {
+            "threshold": pd.DataFrame(default_res_threshold, index=[0]),
+            "biasedthreshold": pd.DataFrame(default_res_biasedthreshold, index=[0]),
         }
-        return pd.DataFrame(res, index=[0])
 
     print(
         f"{debug_name} - Train accuracy {acc_train*100:.2f}, Test accuracy {acc_test*100:.2f} "
@@ -191,17 +237,32 @@ def run_threshold_attack(
             f"Test losses - avg:{losses_test.mean()}, std:{losses_test.std()}, min:{losses_test.min()}, max:{losses_test.max()}."
         )
     # We use 1 - losses to have an AUC>0.5 (works for CrossEntropyLoss)
-    res = {}
-    threshold_result_unbalanced = threshold_attack(
-        -losses_train, -losses_test, balanced=False
-    )
-    res["roc_auc"] = threshold_result_unbalanced["roc_auc"]
+    res_threshold = {}
+    if both_attacks or attack == "threshold":
+        threshold_result_unbalanced = threshold_attack(
+            -losses_train, -losses_test, balanced=False
+        )
+        res_threshold["roc_auc"] = threshold_result_unbalanced["roc_auc"]
 
-    threshold_result_balanced = threshold_attack(
-        -losses_train, -losses_test, balanced=True
-    )
-    res["roc_auc_balanced"] = threshold_result_balanced["roc_auc"]
-    return pd.DataFrame(res, index=[0])
+        threshold_result_balanced = threshold_attack(
+            -losses_train, -losses_test, balanced=True
+        )
+        res_threshold["roc_auc_balanced"] = threshold_result_balanced["roc_auc"]
+
+    res_biasedthreshold = {}
+    if both_attacks or attack == "biasedthreshold":
+        res_biasedthreshold = get_biased_threshold_acc(
+            train_losses=losses_train,
+            test_losses=losses_test,
+            top_kth=ALL_TOPK_ATTACKS,
+        )
+        # TODO: make a biasedthreshold on the balanced losses?
+        # TODO: investigate the small success of this attack.
+
+    return {
+        "threshold": pd.DataFrame(res_threshold, index=[0]),
+        "biasedthreshold": pd.DataFrame(res_biasedthreshold, index=[0]),
+    }
 
 
 def run_linkability_attack(
@@ -252,7 +313,7 @@ def attack_experiment(
     nb_agents: int,
     experiment_path,
     device_type: str = "cpu",
-    attack="threshold",
+    attack_todo="threshold",
     loss_function=torch.nn.CrossEntropyLoss,
     debug=False,
 ):
@@ -264,7 +325,7 @@ def attack_experiment(
     dataset = config.dataset.dataset_class
 
     seed = load_experiments.safe_load_int(config, "DATASET", "random_seed")
-    if dataset == "Femnist" or dataset == "FemnistLabelSplit":
+    if dataset in ["Femnist", "FemnistLabelSplit"]:
         kshards = None
     else:
         kshards = load_experiments.safe_load_int(config, "DATASET", "shards")
@@ -272,21 +333,62 @@ def attack_experiment(
     model_name = config.dataset.model_class
     model_initialiser = POSSIBLE_MODELS[model_name]
 
-    assert attack in ["threshold", "linkability"]
-    results_file = os.path.join(experiment_path, f"{attack}_{experiment_name}.csv")
-    if os.path.exists(results_file):
-        print(f"{attack}-attack already computed for {experiment_name}, skipping")
-        return
+    assert attack_todo in [
+        "threshold",
+        "linkability",
+        "biasedthreshold",
+        "threshold+biasedthreshold",  # Those two attacks can be combined to save time and energy.
+    ]
+
+    if attack_todo == "threshold+biasedthreshold":
+        results_files = {}
+        both_attacks = True
+        result_file_threshold = os.path.join(
+            experiment_path, f"threshold_{experiment_name}.csv"
+        )
+        if os.path.exists(result_file_threshold):
+            print(
+                f"threshold-attack already computed for {experiment_name}, not computing"
+            )
+            attack_todo = "biasedthreshold"
+        else:
+            results_files["threshold"] = result_file_threshold
+        result_file_biasedthreshold = os.path.join(
+            experiment_path, f"biasedthreshold_{experiment_name}.csv"
+        )
+        if os.path.exists(result_file_threshold):
+            print(
+                f"threshold-attack already computed for {experiment_name}, not computing"
+            )
+            if attack_todo == "biasedthreshold":
+                print(f"Both attacks already computed for {experiment_name}, skipping")
+                return
+            attack_todo = "threshold"
+        else:
+            results_files["biasedthreshold"] = result_file_biasedthreshold
+
+    if attack_todo in ["linkability", "threshold", "biasedthreshold"]:
+        results_files = {}
+        both_attacks = False
+        results_file = os.path.join(
+            experiment_path, f"{attack_todo}_{experiment_name}.csv"
+        )
+        if os.path.exists(results_file):
+            print(
+                f"{attack_todo}-attack already computed for {experiment_name}, skipping"
+            )
+            return
+        results_files[attack_todo] = [results_file]
 
     device = torch.device(device_type)
-    print(f"Launching {attack}-attack on {experiment_name}.")
+    print(f"Launching {attack_todo}-attack on {experiment_name}.")
     t1 = time.time()
 
     trainset_partitioner, testset = load_experiments.load_dataset_partitioner(
         dataset, nb_agents, seed, kshards, debug=DEBUG
     )
     testset = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
-    res = pd.DataFrame({})
+
     current_experiment = experiment_df[
         experiment_df["experiment_name"] == experiment_name
     ]
@@ -296,7 +398,10 @@ def attack_experiment(
 
     loss = loss_function()
     attack_object = None
-    if attack == "linkability":
+    # This is a trick to save time: only have one attack instance for all the experiment
+    # instead of creating a new one for each model in the experiment.
+    # Avoids loading repeatedly the dataset.
+    if attack_todo == "linkability":
         attack_object = LinkabilityAttack(
             num_clients=nb_agents,
             client_datasets=trainset_partitioner,
@@ -305,7 +410,9 @@ def attack_experiment(
             device=device,
         )
 
-    for agent in sorted(pd.unique(current_experiment["agent"])):
+    total_result = {}
+    agent_list = sorted(pd.unique(current_experiment["agent"]))
+    for agent in agent_list:
         current_agent_experiments = current_experiment[
             current_experiment["agent"] == agent
         ]
@@ -314,6 +421,7 @@ def attack_experiment(
             trainset, batch_size=batch_size, shuffle=False
         )
         for _, row in current_agent_experiments.iterrows():
+            results = {}
             iteration = row["iteration"]
             model_path = row["file"]
             target = row["target"]
@@ -323,11 +431,11 @@ def attack_experiment(
             else:
                 endline = "\r"
             print(
-                f"Launching {attack} attack {agent}->{target} at iteration {iteration}, {(tcurrent-t1)/60:.2f} minutes taken to reach this point"
+                f"Launching {attack_todo} attack {agent}->{target} at iteration {iteration}, {(tcurrent-t1)/60:.2f} minutes taken to reach this point"
                 + " " * 10,
                 end=endline,
             )
-            if attack == "linkability":
+            if attack_todo == "linkability":
                 assert attack_object is not None
                 attack_result = run_linkability_attack(
                     running_model=running_model,
@@ -338,8 +446,10 @@ def attack_experiment(
                     lens=lens,
                     device=device,
                 )
+                results[attack] = [attack_result]
+
             else:
-                attack_result = run_threshold_attack(
+                threshold_results = run_threshold_attack(
                     running_model,
                     model_path,
                     trainset,
@@ -349,29 +459,50 @@ def attack_experiment(
                     device=device,
                     debug=debug,
                     debug_name=experiment_name,
+                    attack=attack_todo,
                 )
-                if debug:
-                    print(
-                        f"it:{iteration} -  {agent}->{target}. AUC={attack_result['roc_auc']}, Balanced AUC={attack_result['roc_auc_balanced']}  "
-                    )
-            attack_result["iteration"] = iteration
-            attack_result["agent"] = agent
-            attack_result["target"] = target
-            res = pd.concat([res, attack_result])
-    # Rewrite the columns in a better order
-    columns = res.columns.tolist()
-    columns.sort(key=lambda x: (1, "") if "loss_trainset_" in x else (0, x))
+                # Only save the necessary results.
+                for attack_to_save in results_files:
+                    results[attack_to_save] = threshold_results[attack_to_save]
 
-    res = res[columns]
-    if res.shape[0] < 10:
-        print(f"Only {res.shape[0]} in the result for {attack} - {experiment_name}")
-        print(res)
-        raise ValueError(res)
-    # Save the file
-    print(f"Writing results to {results_file}")
-    res.to_csv(results_file)
+            for attack, result in results.items():
+                result["iteration"] = iteration
+                result["agent"] = agent
+                result["target"] = target
+                results[attack] = result
+                if debug:
+                    print(f"it:{iteration} -  {agent}->{target}. {attack}:\n{result}\n")
+                if attack not in total_result:
+                    total_result[attack] = pd.DataFrame({})
+                total_result[attack] = pd.concat(
+                    [total_result[attack], results[attack]]
+                )
+
+    # save all the attacks
+    for current_attack, result_file in results_files.items():
+        res = total_result[current_attack]
+        # Rewrite the columns in a better order
+        columns = res.columns.tolist()
+        columns.sort(key=lambda x: (1, "") if "loss_trainset_" in x else (0, x))
+        if current_attack == "biasedthreshold":
+            columns.sort(
+                key=lambda x: (1, len(x), x) if "_acc" in x else (0, len(x), x)
+            )
+
+        res = res[columns]
+        if res.shape[0] < 10:
+            print(
+                f"Only {res.shape[0]} in the result for {current_attack} - {experiment_name}"
+            )
+            print(res)
+            raise ValueError(res)
+        # Save the file
+        print(f"Writing results to {result_file}")
+        res.to_csv(result_file)
     t2 = time.time()
-    print(f"Finished {attack} attack on {experiment_name} in {(t2-t1)/3600:.2f}hours")
+    print(
+        f"Finished {attack_todo} attack on {experiment_name} in {(t2-t1)/3600:.2f}hours"
+    )
     return
 
 
@@ -420,8 +551,8 @@ def main(
     batch_size=256,
     nb_agents=128,
     nb_machines=8,
+    attacks=ALL_ATTACKS,
 ):
-    attacks = ALL_ATTACKS
     device_type = "cuda:0"
 
     # ---------
@@ -467,7 +598,7 @@ def main(
                         nb_agents=copy.deepcopy(nb_agents),
                         experiment_path=os.path.join(experiments_dir, experiment_name),
                         device_type=copy.deepcopy(device_type),
-                        attack=copy.deepcopy(attacks[0]),
+                        attack_todo=copy.deepcopy(attacks[0]),
                         debug=DEBUG,
                     )
                     raise RuntimeError()
@@ -479,7 +610,7 @@ def main(
                     nb_agents=copy.deepcopy(nb_agents),
                     experiment_path=os.path.join(experiments_dir, experiment_name),
                     device_type=copy.deepcopy(device_type),
-                    attack=copy.deepcopy(attack),
+                    attack_todo=copy.deepcopy(attack),
                     debug=DEBUG,
                 )
                 futures.append(future)
@@ -499,6 +630,7 @@ def main(
             )
 
 
+ALL_TOPK_ATTACKS = [1, 5, 10, 100, 250, 500]
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Attacks saved models after simulation"
@@ -557,7 +689,7 @@ if __name__ == "__main__":
     DEBUG = args.debug
     NB_AGENTS = args.nb_agents
     NB_MACHINES = args.nb_machines
-    ALL_ATTACKS = ["threshold"]
+    ALL_ATTACKS = ["threshold+biasedthreshold"]
 
     main(
         experiments_dir=EXPERIMENT_DIR,
@@ -566,4 +698,5 @@ if __name__ == "__main__":
         batch_size=BATCH_SIZE,
         nb_agents=NB_AGENTS,
         nb_machines=NB_MACHINES,
+        attacks=ALL_ATTACKS,
     )

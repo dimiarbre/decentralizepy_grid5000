@@ -22,7 +22,12 @@ from decentralizepy.datasets.Partitioner import (
 )
 
 # Sort this by longest computation time first to have a better scheduling policy.
-ALL_ATTACKS = ["linkability", "threshold"]
+ALL_ATTACKS = [
+    "linkability",
+    "threshold+biasedthreshold",
+    "biasedthreshold",
+    "threshold",
+]
 
 
 def read_ini(file_path: str, verbose=False) -> LocalConfig:

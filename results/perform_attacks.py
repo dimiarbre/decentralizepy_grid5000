@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import traceback
+from typing import Optional
 
 import load_experiments
 import numpy as np
@@ -17,6 +18,7 @@ import pandas as pd
 import torch
 from LinkabilityAttack import LinkabilityAttack
 from load_experiments import ALL_ATTACKS, POSSIBLE_MODELS
+from RocPlotter import RocPlotter
 from sklearn.metrics import (
     auc,
     average_precision_score,
@@ -73,7 +75,12 @@ def get_biased_threshold_acc(train_losses, test_losses, top_kth: list[int]):
     return res
 
 
-def threshold_attack(local_train_losses, test_losses, balanced=True):
+def threshold_attack(
+    local_train_losses,
+    test_losses,
+    balanced=False,
+    plotter: Optional[RocPlotter] = None,
+):
     # We need the losses to be increasing the more likely we are to be in the train set,
     # so 1-loss should be given as argument.
     num_true = local_train_losses.shape[0]
@@ -84,13 +91,13 @@ def threshold_attack(local_train_losses, test_losses, balanced=True):
     ), f"Not enough test elements: {test_losses.shape[0]} when at least {num_true} where expected"
 
     if balanced:
-        y_true = torch.zeros((num_true + num_true,), dtype=torch.int32)
+        y_true = torch.ones((num_true + num_true,), dtype=torch.int32)
         y_pred = torch.zeros((num_true + num_true,), dtype=torch.float32)
     else:
-        y_true = torch.zeros((num_true + test_losses.shape[0]), dtype=torch.int32)
+        y_true = torch.ones((num_true + test_losses.shape[0]), dtype=torch.int32)
         y_pred = torch.zeros((num_true + test_losses.shape[0]), dtype=torch.float32)
 
-    y_true[:num_true] = 1
+    y_true[:num_true] = 0
     y_pred[:num_true] = local_train_losses
 
     if balanced:
@@ -103,8 +110,19 @@ def threshold_attack(local_train_losses, test_losses, balanced=True):
     y_true = y_true.numpy()
     # print("Shapes: ", y_pred.shape, y_true.shape)
 
-    # fpr, tpr, thresholds = roc_curve(y_true, y_pred, pos_label=1)
     roc_auc = roc_auc_score(y_true, y_pred)
+
+    if plotter is not None:
+        fpr, tpr, thresholds = roc_curve(y_true, y_pred, pos_label=1)
+        plotter.plot_roc(
+            fpr,
+            tpr,
+            thresholds,
+            roc_auc,
+            losses_train=y_pred[:num_true],
+            losses_test=y_pred[num_true:],
+        )
+
     res = {
         # "fpr": fpr,
         # "tpr": tpr,
@@ -168,6 +186,8 @@ def run_threshold_attack(
     debug=False,
     debug_name="",
     attack="threshold",
+    plotter_unbalanced: Optional[RocPlotter] = None,
+    plotter_balanced: Optional[RocPlotter] = None,
 ):
     both_attacks = False
     default_res_threshold = {
@@ -240,12 +260,12 @@ def run_threshold_attack(
     res_threshold = {}
     if both_attacks or attack == "threshold":
         threshold_result_unbalanced = threshold_attack(
-            -losses_train, -losses_test, balanced=False
+            losses_train, losses_test, balanced=False, plotter=plotter_unbalanced
         )
         res_threshold["roc_auc"] = threshold_result_unbalanced["roc_auc"]
 
         threshold_result_balanced = threshold_attack(
-            -losses_train, -losses_test, balanced=True
+            losses_train, losses_test, balanced=True, plotter=plotter_balanced
         )
         res_threshold["roc_auc_balanced"] = threshold_result_balanced["roc_auc"]
 
@@ -342,7 +362,6 @@ def attack_experiment(
 
     if attack_todo == "threshold+biasedthreshold":
         results_files = {}
-        both_attacks = True
         result_file_threshold = os.path.join(
             experiment_path, f"threshold_{experiment_name}.csv"
         )
@@ -413,6 +432,17 @@ def attack_experiment(
     total_result = {}
     agent_list = sorted(pd.unique(current_experiment["agent"]))
     for agent in agent_list:
+        if agent == 0:
+            roc_plotter_unbalanced = RocPlotter(
+                os.path.join(experiment_path, f"unbalanced_roc_loss_distrib.pdf"),
+                nb_columns=5,
+            )
+            roc_plotter_balanced = RocPlotter(
+                os.path.join(experiment_path, f"balanced_roc_loss_distrib.pdf"),
+                nb_columns=5,
+            )
+        else:
+            roc_plotter_unbalanced = None
         current_agent_experiments = current_experiment[
             current_experiment["agent"] == agent
         ]
@@ -420,7 +450,11 @@ def attack_experiment(
         trainset = torch.utils.data.DataLoader(
             trainset, batch_size=batch_size, shuffle=False
         )
-        for _, row in current_agent_experiments.iterrows():
+
+        rows = [row for _, row in current_agent_experiments.iterrows()]
+        rows = sorted(rows, key=lambda row: int(row["iteration"]))
+
+        for row in rows:
             results = {}
             iteration = row["iteration"]
             model_path = row["file"]
@@ -449,6 +483,16 @@ def attack_experiment(
                 results[attack] = [attack_result]
 
             else:
+                if roc_plotter_unbalanced is not None:
+                    roc_plotter_unbalanced.set_next_plot(
+                        iteration=iteration,
+                        log_next=iteration in [1, 100, 1000, 2500, 4000, 5000],
+                    )
+                if roc_plotter_balanced is not None:
+                    roc_plotter_balanced.set_next_plot(
+                        iteration=iteration,
+                        log_next=iteration in [1, 100, 1000, 2500, 4000, 5000],
+                    )
                 threshold_results = run_threshold_attack(
                     running_model,
                     model_path,
@@ -460,6 +504,8 @@ def attack_experiment(
                     debug=debug,
                     debug_name=experiment_name,
                     attack=attack_todo,
+                    plotter_unbalanced=roc_plotter_unbalanced,
+                    plotter_balanced=roc_plotter_balanced,
                 )
                 # Only save the necessary results.
                 for attack_to_save in results_files:

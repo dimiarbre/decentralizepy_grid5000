@@ -3,192 +3,18 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import plot_loaders
 import seaborn as sns
 
-ATTRIBUTE_DICT = {
-    "network_size": ["128nodes"],
-    "topology_type": ["static", "dynamic"],
-    "variant": ["nonoise", "muffliato", "zerosum"],
-    "avgsteps": ["20avgsteps", "15avgsteps", "10avgsteps", "5avgsteps", "1avgsteps"],
-    "additional_attribute": ["selfnoise", "noselfnoise", "nonoise", "muffliato"],
-    "noise_level": [
-        "nonoise",
-        "0p25th",
-        "0p5th",
-        "0p75th",
-        "1th",
-        "2th",
-        "2p5th",
-        "3th",
-        "3p5th",
-        "4th",
-        "5th",
-        "6th",
-        "7th",
-        "8th",
-        "16th",
-        "32th",
-        "64th",
-        "128th",
-    ],
-    "lr": ["lr0.05", "lr0.01", "lr0.10"],
-    "local_rounds": ["1rounds", "3rounds"],
-    "batch_size": ["batch64"],
-    "seed": [f"seed{val}" for val in range(90, 106)],
-    "model": ["LeNet", "CNN", "RNET"],
-}
+# Attributes that will always be needed to export for the pgfplots.
+EXPORT_ATTRIBUTES = ["noise_level_value", "log_noise", "variant"]
 
 
-def percentile(n):
-    """Function to create the percentile aggregator.
-    Taken from https://stackoverflow.com/questions/17578115/pass-percentiles-to-pandas-agg-function
-
-    Args:
-        n (float): The percentage of the percentile. Can be 0.5,0.95, ...
-    """
-
-    def percentile_(x):
-        return x.quantile(n)
-
-    percentile_.__name__ = "percentile_{:02.0f}".format(100 * n)
-    return percentile_
-
-
-def get_attributes(filename, attribute_dict=ATTRIBUTE_DICT):
-    parsed_filename = filename.split("_")
-    res_attribute = {}
-    for global_attribute, possible_values in attribute_dict.items():
-        for current_attribute in parsed_filename:
-            if current_attribute in possible_values:
-                if current_attribute not in res_attribute:
-                    res_attribute[global_attribute] = current_attribute
-                else:
-                    raise RuntimeError(f"Duplicate of attributes in {filename}")
-
-        if global_attribute not in res_attribute:
-            # print(f"No value found for attribute {global_attribute} for {filename}")
-            res_attribute[global_attribute] = None
-    return res_attribute
-
-
-def get_experiments_dict(names, attribute_dict=ATTRIBUTE_DICT):
-    experiment_dict = {}
-    for filename in names:
-        experiment_dict[filename] = get_attributes(filename, attribute_dict)
-    return experiment_dict
-
-
-def get_full_path_dict(experiments_dir):
-    files_list = os.listdir(experiments_dir)
-    full_path_dict = {}
-    for experiment in files_list:
-        full_path_dict[experiment] = os.path.join(experiments_dir, experiment)
-    return full_path_dict
-
-
-def check_attribute(experiment_attributes, attributes_to_check):
-    for attribute, expected_values in attributes_to_check.items():
-        if experiment_attributes[attribute] not in expected_values:
-            return False
-    return True
-
-
-def filter_attribute(experiments_attributes, attributes_to_check):
-    res = []
-    for experiment_name, experiment_attribute in sorted(experiments_attributes.items()):
-        matches_attributes = check_attribute(experiment_attribute, attributes_to_check)
-        if matches_attributes:
-            res.append(experiment_name)
-    return sorted(res)
-
-
-def filter_attribute_list(experiment_attributes, attributes_to_check_list):
-    res = []
-    for attributes_to_check in attributes_to_check_list:
-        res = res + filter_attribute(
-            experiments_attributes=experiment_attributes,
-            attributes_to_check=attributes_to_check,
-        )
-    return res
-
-
-def get_style(current_attributes, mapping, option_name):
-    res = None
-    for attribute in current_attributes:
-        attr_to_consider = current_attributes[attribute]
-        if attr_to_consider in mapping:
-            if res is None:
-                res = mapping[current_attributes[attribute]]
-            else:
-                raise RuntimeError(
-                    f"Two options found for {option_name} and mapping {mapping}:\n",
-                    f"{res} and {mapping[current_attributes[attribute]]}",
-                )
-    return res
-
-
-def plot_evolution_iterations(
-    data,
-    name,
-    column_name="test_acc mean",
-    current_attributes=None,
-    attribute_mapping=None,
-):
-    print(data.columns)
-    data_to_consider = data[column_name].dropna()
-    if current_attributes is None or attribute_mapping is None:
-        plt.plot(data_to_consider.index, data_to_consider, label=name)
-        return
-    color = get_style(current_attributes, attribute_mapping["color"], "color")
-    linestyle = get_style(
-        current_attributes, attribute_mapping["linestyle"], "linestyle"
-    )
-    linewidth = get_style(
-        current_attributes, attribute_mapping["linewidth"], "linewidth"
-    )
-    plt.plot(
-        data_to_consider.index,
-        data_to_consider,
-        label=name,
-        color=color,
-        linestyle=linestyle,
-        linewidth=linewidth,
-    )
-
-
-def get_attributes_columns(name, display_attributes, data_to_plot, orderings):
-    if name in display_attributes:
-        column_labels = display_attributes[name]
-        if isinstance(column_labels, list):
-            return data_to_plot[column_labels].apply(tuple, axis=1), None
-        elif isinstance(column_labels, str):
-            if orderings is not None and column_labels in orderings:
-                return column_labels, orderings[column_labels]
-            return column_labels, None
-    return None, None
-
-
-def select_attributes_to_keep(display_attributes, x_axis_name) -> list[str]:
-    attributes_to_keep = [] if x_axis_name == "iteration" else [x_axis_name]
-    if display_attributes is not None:
-        for _, item in display_attributes.items():
-            if isinstance(item, list):
-                for attribute in item:
-                    if attribute not in attributes_to_keep:
-                        attributes_to_keep.append(attribute)
-            elif item not in attributes_to_keep:
-                attributes_to_keep.append(item)
-    return attributes_to_keep
-
-
-def all_equals(l):
-    if len(l) == 0:
-        return True
-    element = l[0]
-    for i in range(1, len(l)):
-        if l[i] != element:
-            return False
-    return True
+def extend_attributes_for_plot(attributes):
+    for bonus_attribute in EXPORT_ATTRIBUTES:
+        if bonus_attribute not in attributes:
+            attributes.append(bonus_attribute)
+    return attributes
 
 
 def plot_all_experiments(
@@ -200,17 +26,16 @@ def plot_all_experiments(
     save_directory=None,
     orderings=None,
 ):
-    attributes_to_keep = select_attributes_to_keep(display_attributes, "iteration")
-    if "variant" not in attributes_to_keep:
-        attributes_to_keep.append("variant")
-    if "noise_level_value" not in attributes_to_keep:
-        attributes_to_keep.append("noise_level_value")
+    attributes_to_keep = plot_loaders.select_attributes_to_keep(
+        display_attributes, "iteration"
+    )
+    attributes_to_keep = extend_attributes_for_plot(attributes_to_keep)
     data_to_plot = pd.DataFrame({})
     for experiment in experiments:
         data_experiment = data[experiment][[column_name] + attributes_to_keep]
         data_experiment = data_experiment.dropna()
 
-        experiment_attributes = get_attributes(experiment)
+        experiment_attributes = plot_loaders.get_attributes(experiment)
         filename = f"{experiment_attributes['variant']}{experiment_attributes['noise_level']}_{experiment_attributes['avgsteps']}"
         data_experiment.to_csv(
             f"{save_directory}plot_data/entire_experiment_data/{filename}.csv"
@@ -218,16 +43,16 @@ def plot_all_experiments(
         data_to_plot = pd.concat([data_to_plot, data_experiment])
 
     sns.set_theme()
-    hue, hue_ordering = get_attributes_columns(
+    hue, hue_ordering = plot_loaders.get_attributes_columns(
         "hue", display_attributes, data_to_plot, orderings
     )
-    style, style_ordering = get_attributes_columns(
+    style, style_ordering = plot_loaders.get_attributes_columns(
         "style", display_attributes, data_to_plot, orderings
     )
-    size, size_ordering = get_attributes_columns(
+    size, size_ordering = plot_loaders.get_attributes_columns(
         "size", display_attributes, data_to_plot, orderings
     )
-    col, col_ordering = get_attributes_columns(
+    col, col_ordering = plot_loaders.get_attributes_columns(
         "col", display_attributes, data_to_plot, orderings
     )
 
@@ -248,7 +73,7 @@ def plot_all_experiments(
     )
     plot.figure.suptitle(plot_name)
     plot.figure.subplots_adjust(top=0.9)
-    is_unique = all_equals(
+    is_unique = plot_loaders.all_equals(
         [
             attribute_value
             for attribute, attribute_value in display_attributes.items()
@@ -288,7 +113,7 @@ def scatter_all_experiments(
     save_directory=None,
     orderings=None,
 ):
-    attributes_to_keep = select_attributes_to_keep(
+    attributes_to_keep = plot_loaders.select_attributes_to_keep(
         display_attributes=display_attributes, x_axis_name=x_axis_name
     )
     data_to_plot = pd.DataFrame({})
@@ -298,7 +123,7 @@ def scatter_all_experiments(
         data_to_plot = pd.concat([data_to_plot, data_experiment])
 
     sns.set_theme()
-    hue, hue_ordering = get_attributes_columns(
+    hue, hue_ordering = plot_loaders.get_attributes_columns(
         "hue", display_attributes, data_to_plot, orderings
     )
     # style, style_ordering = get_attributes_columns(
@@ -373,13 +198,12 @@ def scatter_averaged_experiments(
     true_x_axis = x_axis_name + " " + x_method
     true_y_axis = y_axis_name + " " + y_method
     data_to_plot = pd.DataFrame({})
-    attributes_to_keep = select_attributes_to_keep(display_attributes, x_axis_name)
+    attributes_to_keep = plot_loaders.select_attributes_to_keep(
+        display_attributes, x_axis_name
+    )
     top_acc_axis_name = x_axis_name + " mean to max " + y_axis_name
 
-    if "noise_level_value" not in attributes_to_keep:
-        attributes_to_keep.append("noise_level_value")
-    if "noise_level" not in attributes_to_keep:
-        attributes_to_keep.append("noise_level")
+    attributes_to_keep = extend_attributes_for_plot(attributes_to_keep)
     attributes_to_keep.remove(x_axis_name)
     for experiment in sorted(experiments):
         experiment_data = data[experiment]
@@ -424,13 +248,13 @@ def scatter_averaged_experiments(
     core_data = core_data[core_data["variant"] == "zerosum"]
 
     sns.set_theme()
-    hue, hue_ordering = get_attributes_columns(
+    hue, hue_ordering = plot_loaders.get_attributes_columns(
         "hue", display_attributes, data_to_plot, orderings
     )
-    style, style_ordering = get_attributes_columns(
+    style, style_ordering = plot_loaders.get_attributes_columns(
         "style", display_attributes, data_to_plot, orderings
     )
-    size, size_ordering = get_attributes_columns(
+    size, size_ordering = plot_loaders.get_attributes_columns(
         "size", display_attributes, data_to_plot, orderings
     )
     # col, col_ordering = get_attributes_columns(
@@ -599,25 +423,3 @@ def plot_communication(
         # print(f"Saving to {savefile}")
         # plt.savefig(savefile, bbox_inches=extent)
     return
-
-
-if __name__ == "__main__":
-    EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10"
-    paths_dict = get_full_path_dict(EXPERIMENT_DIR)
-    experiments_dict = get_experiments_dict(paths_dict.keys())
-    print(experiments_dict)
-    print(paths_dict)
-
-    attributes_list_to_check = [
-        {
-            "variant": "zerosum",
-            "additional_attribute": ["noselfnoise"],
-        },
-        {
-            "variant": "muffliato",
-            "avgsteps": "1avgsteps",
-        },
-    ]
-
-    res = filter_attribute_list(experiments_dict, attributes_list_to_check)
-    print(res)

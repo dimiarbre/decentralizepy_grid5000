@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import torch
 from LinkabilityAttack import LinkabilityAttack
-from load_experiments import ALL_ATTACKS, POSSIBLE_MODELS
+from load_experiments import ALL_ATTACKS, POSSIBLE_DATASETS, POSSIBLE_MODELS
 from RocPlotter import RocPlotter
 from sklearn.metrics import (
     auc,
@@ -84,11 +84,24 @@ def threshold_attack(
     # We need the losses to be increasing the more likely we are to be in the train set,
     # so 1-loss should be given as argument.
     num_true = local_train_losses.shape[0]
+    if num_true == 0:
+        return {
+            # "fpr": fpr,
+            # "tpr": tpr,
+            # "thresholds": thresholds,
+            "roc_auc": torch.nan,
+            "gini_auc": torch.nan,
+        }
     # print("Number of training samples: ", num_true)
 
-    assert (
-        num_true <= test_losses.shape[0]
-    ), f"Not enough test elements: {test_losses.shape[0]} when at least {num_true} where expected"
+    # Had to remove an hard assertion for per-class data split.
+    if num_true > test_losses.shape[0]:
+        print(
+            f"Not enough test elements: {test_losses.shape[0]} when at least {num_true} where expected"
+        )
+        # TODO: should we remove some train elements in the case of a biaised attack?
+        if balanced:
+            num_true = test_losses.shape[0]
 
     if balanced:
         y_true = torch.ones((num_true + num_true,), dtype=torch.int32)
@@ -112,8 +125,13 @@ def threshold_attack(
 
     roc_auc = roc_auc_score(y_true, y_pred)
 
+    gini_auc = 2 * roc_auc - 1
+
     if plotter is not None:
-        fpr, tpr, thresholds = roc_curve(y_true, y_pred, pos_label=1)
+        fpr, tpr, thresholds = roc_curve(
+            y_true, y_pred, pos_label=1
+        )  # We take the opposite of the losses for the ROC-curve function
+
         plotter.plot_roc(
             fpr,
             tpr,
@@ -128,6 +146,7 @@ def threshold_attack(
         # "tpr": tpr,
         # "thresholds": thresholds,
         "roc_auc": roc_auc,
+        "gini_auc": gini_auc,
     }
     return res
 
@@ -151,6 +170,7 @@ def generate_losses(
     debug=False,
 ):
     losses = torch.tensor([])
+    classes = torch.tensor([])
     # Fixes inconsistent batch size
     # See https://discuss.pytorch.org/t/error-expected-more-than-1-value-per-channel-when-training/262741
     model.eval()
@@ -164,15 +184,15 @@ def generate_losses(
             loss = loss_function(y_pred, y)
             loss = loss.to("cpu")
             losses = torch.cat([losses, loss])
+            y_cpu = y.to("cpu")
+            classes = torch.cat([y_cpu, classes])
             _, predictions = torch.max(y_pred, 1)
             for label, prediction in zip(y, predictions):
                 if label == prediction:
                     total_correct += 1
                 total_predicted += 1
     accuracy = total_correct / total_predicted
-    if debug:
-        print(f"Accuracy: {accuracy*100:.2f}%")
-    return (losses, accuracy)
+    return (losses, classes, accuracy)
 
 
 def run_threshold_attack(
@@ -188,6 +208,7 @@ def run_threshold_attack(
     attack="threshold",
     plotter_unbalanced: Optional[RocPlotter] = None,
     plotter_balanced: Optional[RocPlotter] = None,
+    classes_plotters: list[RocPlotter] = [],
 ):
     both_attacks = False
     default_res_threshold = {
@@ -203,6 +224,7 @@ def run_threshold_attack(
     else:
         raise ValueError(f"Unknown attack {attack}")
 
+    # Load data and generate losses
     load_experiments.load_model_from_path(
         model_path=model_path,
         model=running_model,
@@ -210,9 +232,12 @@ def run_threshold_attack(
         lens=lens,
         device=device,
     )
-    losses_train, acc_train = generate_losses(
+    losses_train, classes_train, acc_train = generate_losses(
         running_model, trainset, device=device, debug=debug
     )
+
+    # Remove nans, usefull for RESNET + FEMNIST at least.
+    # TODO: move this into a function for readability.
     if losses_train.isnan().any():
         losses_train_nonan = losses_train[~losses_train.isnan()]
         percent_fail = (
@@ -222,7 +247,8 @@ def run_threshold_attack(
             f"{debug_name} - Found NaNs in train loss! Removed {percent_fail:.2f}% of train losses"
         )
         losses_train = losses_train_nonan
-    losses_test, acc_test = generate_losses(
+        classes_train = classes_train[~losses_train.isnan()]
+    losses_test, classes_test, acc_test = generate_losses(
         running_model, testset, device=device, debug=debug
     )
     if losses_test.isnan().any():
@@ -234,6 +260,7 @@ def run_threshold_attack(
             f"{debug_name} - Found NaNs in test loss! Removed {percent_fail:.2f}% of test losses"
         )
         losses_test = losses_test_nonan
+        classes_test = classes_test[~losses_test.isnan()]
     if len(losses_test) == 0 or len(losses_train) == 0:
         # print(
         #     "Found a losses tensor of size 0, found lengths -"
@@ -246,7 +273,7 @@ def run_threshold_attack(
         }
 
     print(
-        f"{debug_name} - Train accuracy {acc_train*100:.2f}, Test accuracy {acc_test*100:.2f} "
+        f"{debug_name} - Train accuracy {acc_train*100:.2f}%, Test accuracy {acc_test*100:.2f}%"
     )
 
     if debug:
@@ -256,18 +283,47 @@ def run_threshold_attack(
         print(
             f"Test losses - avg:{losses_test.mean()}, std:{losses_test.std()}, min:{losses_test.min()}, max:{losses_test.max()}."
         )
-    # We use 1 - losses to have an AUC>0.5 (works for CrossEntropyLoss)
     res_threshold = {}
     if both_attacks or attack == "threshold":
         threshold_result_unbalanced = threshold_attack(
             losses_train, losses_test, balanced=False, plotter=plotter_unbalanced
         )
         res_threshold["roc_auc"] = threshold_result_unbalanced["roc_auc"]
+        res_threshold["gini_auc"] = threshold_result_unbalanced["gini_auc"]
 
         threshold_result_balanced = threshold_attack(
             losses_train, losses_test, balanced=True, plotter=plotter_balanced
         )
         res_threshold["roc_auc_balanced"] = threshold_result_balanced["roc_auc"]
+        res_threshold["gini_auc_balanced"] = threshold_result_balanced["gini_auc"]
+
+        # Do threshold attack per class
+        nb_classes = int(torch.max(classes_train.max(), classes_test.max()).item()) + 1
+        for class_id in range(nb_classes):
+            if class_id < len(classes_plotters):
+                current_class_plotter = classes_plotters[class_id]
+            else:
+                current_class_plotter = None
+            current_class_train_losses = losses_train[
+                classes_train == torch.tensor(class_id)
+            ]
+            current_class_test_losses = losses_test[
+                classes_test == torch.tensor(class_id)
+            ]
+
+            current_class_threshold = threshold_attack(
+                current_class_train_losses,
+                current_class_test_losses,
+                balanced=False,
+                plotter=current_class_plotter,
+            )
+
+            res_threshold[f"roc_auc_class{class_id}"] = current_class_threshold[
+                "roc_auc"
+            ]
+            res_threshold[f"gini_auc_class{class_id}"] = current_class_threshold[
+                "gini_auc"
+            ]
 
     res_biasedthreshold = {}
     if both_attacks or attack == "biasedthreshold":
@@ -343,10 +399,12 @@ def attack_experiment(
     config = load_experiments.read_ini(config_file)
 
     dataset = config.dataset.dataset_class
+    nb_classes = POSSIBLE_DATASETS[dataset][1]
 
     seed = load_experiments.safe_load_int(config, "DATASET", "random_seed")
     if dataset in ["Femnist", "FemnistLabelSplit"]:
         kshards = None
+
     else:
         kshards = load_experiments.safe_load_int(config, "DATASET", "shards")
 
@@ -388,7 +446,6 @@ def attack_experiment(
 
     if attack_todo in ["linkability", "threshold", "biasedthreshold"]:
         results_files = {}
-        both_attacks = False
         results_file = os.path.join(
             experiment_path, f"{attack_todo}_{experiment_name}.csv"
         )
@@ -432,6 +489,7 @@ def attack_experiment(
     total_result = {}
     agent_list = sorted(pd.unique(current_experiment["agent"]))
     for agent in agent_list:
+        roc_plotter_classes: list[RocPlotter] = []
         if agent == 0:
             roc_plotter_unbalanced = RocPlotter(
                 os.path.join(experiment_path, f"unbalanced_roc_loss_distrib.pdf"),
@@ -441,6 +499,15 @@ def attack_experiment(
                 os.path.join(experiment_path, f"balanced_roc_loss_distrib.pdf"),
                 nb_columns=5,
             )
+            for i in range(nb_classes):
+                roc_plotter_classes.append(
+                    RocPlotter(
+                        os.path.join(
+                            experiment_path, f"unbalanced_roc_loss_distrib_class{i}.pdf"
+                        ),
+                        nb_columns=5,
+                    )
+                )
         else:
             roc_plotter_unbalanced = None
         current_agent_experiments = current_experiment[
@@ -483,6 +550,7 @@ def attack_experiment(
                 results[attack] = [attack_result]
 
             else:
+                # TODO: remove this and simply give iteration as a parameter.
                 if roc_plotter_unbalanced is not None:
                     roc_plotter_unbalanced.set_next_plot(
                         iteration=iteration,
@@ -490,6 +558,11 @@ def attack_experiment(
                     )
                 if roc_plotter_balanced is not None:
                     roc_plotter_balanced.set_next_plot(
+                        iteration=iteration,
+                        log_next=iteration in [1, 100, 1000, 2500, 4000, 5000],
+                    )
+                for plotter in roc_plotter_classes:
+                    plotter.set_next_plot(
                         iteration=iteration,
                         log_next=iteration in [1, 100, 1000, 2500, 4000, 5000],
                     )
@@ -506,6 +579,7 @@ def attack_experiment(
                     attack=attack_todo,
                     plotter_unbalanced=roc_plotter_unbalanced,
                     plotter_balanced=roc_plotter_balanced,
+                    classes_plotters=roc_plotter_classes,
                 )
                 # Only save the necessary results.
                 for attack_to_save in results_files:

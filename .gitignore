@@ -21,7 +21,7 @@ tmp*
 **/workspace.json
 organisation_notes/.obsidian/graph.json
 **/plotting_env/**
-**/assets/
+**/assets
 venv-**/**
 datasets/
 results/datasets

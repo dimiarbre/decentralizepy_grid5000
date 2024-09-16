@@ -7,7 +7,7 @@ import numpy as np
 class RocPlotter:
     def __init__(self, save_file, nb_columns=3) -> None:
         self.filename = save_file
-        self.nb_lines = 2
+        self.nb_lines = 3
         self.nb_columns = nb_columns
         self.fig, self.axs = plt.subplots(
             nrows=self.nb_lines,
@@ -30,12 +30,7 @@ class RocPlotter:
         self.next_iteration = iteration
         self.log_next = log_next
 
-    def plot_roc(self, fpr, tpr, thresholds, roc_auc, losses_train, losses_test):
-        if not self.log_next or self.next_y >= self.nb_columns:
-            return  # We do not plot anything
-
-        axs_roc: plt.axes.Axes = self.axs[0, self.next_y]
-
+    def plot_roc(self, axs_roc, fpr, tpr, roc_auc, log_scale=False):
         axs_roc.plot(fpr, tpr, "b")
 
         # current_axs.legend(loc="lower right")
@@ -45,10 +40,21 @@ class RocPlotter:
 
         axs_roc.set_ylabel("True Positive Rate")
         axs_roc.set_xlabel("False Positive Rate")
-        axs_roc.set_title(f"{self.next_iteration} - AUC = {roc_auc:.2f}")
+        axs_roc.set_title(
+            f"{self.next_iteration} {'log-scale' if log_scale else ''}- AUC = {roc_auc:.2f}"
+        )
+        if log_scale:
+            axs_roc.set_yscale("log")
+            axs_roc.set_xscale("log")
+            axs_roc.set_xlim([1e-5, 1])
+            axs_roc.set_ylim([1e-5, 1])
 
-        # Plot the loss histograms
-        # Define number of bins and bin sizes
+    def plot_losses_histogram(
+        self,
+        axs_losses_train,
+        losses_train,
+        losses_test,
+    ):
         bins = 30
 
         data_min = min(losses_train.min(), losses_test.min())
@@ -76,7 +82,6 @@ class RocPlotter:
         hist_test_normalized = hist_test / hist_test.sum()
 
         # Get the axes
-        axs_losses_train: plt.axes.Axes = self.axs[1, self.next_y]
         axs_losses_train.set_title(f"{self.next_iteration}")
 
         axs_losses_train.tick_params(axis="y", labelcolor="b")
@@ -119,10 +124,26 @@ class RocPlotter:
         if not split_axis:
             axs_losses_train.legend()
 
-        self._update_coordinates()
+    def plot_all(self, fpr, tpr, thresholds, roc_auc, losses_train, losses_test):
+        if not self.log_next or self.next_y >= self.nb_columns:
+            return  # We do not plot anything
+
+        axs_roc: plt.axes.Axes = self.axs[0, self.next_y]
+
+        self.plot_roc(axs_roc, fpr, tpr, roc_auc)
+
+        # Plot the loss histograms
+        axs_losses_train: plt.axes.Axes = self.axs[1, self.next_y]
+        self.plot_losses_histogram(axs_losses_train, losses_train, losses_test)
+        # Define number of bins and bin sizes
+
+        axs_log_roc: plt.axes.Axes = self.axs[2, self.next_y]
+        self.plot_roc(axs_log_roc, fpr, tpr, roc_auc=roc_auc, log_scale=True)
+
         self.fig.tight_layout()
         self.fig.suptitle("Iterations ROC and losses distributions")
         self.fig.savefig(self.filename)
+        self._update_coordinates()
         # if self.next_x >= self.nb_lines:
         #     print(f"Saved ROC curves at {self.filename}")
         #     plt.close(self.fig)

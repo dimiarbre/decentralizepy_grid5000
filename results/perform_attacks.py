@@ -132,7 +132,7 @@ def threshold_attack(
             y_true, y_pred, pos_label=1
         )  # We take the opposite of the losses for the ROC-curve function
 
-        plotter.plot_roc(
+        plotter.plot_all(
             fpr,
             tpr,
             thresholds,
@@ -195,6 +195,19 @@ def generate_losses(
     return (losses, classes, accuracy)
 
 
+def filter_nans(losses: torch.Tensor, classes, debug_name, loss_type):
+    if losses.isnan().any():
+        nans_loc = losses.isnan()
+        losses_nonan = losses[~nans_loc]
+        percent_fail = (len(losses) - len(losses_nonan)) / len(losses) * 100
+        print(
+            f"{debug_name} - Found NaNs in {loss_type} loss! Removed {percent_fail:.2f}% of {loss_type} losses"
+        )
+        losses = losses_nonan
+        classes = classes[~nans_loc]
+    return losses, classes
+
+
 def run_threshold_attack(
     running_model,
     model_path,
@@ -225,6 +238,7 @@ def run_threshold_attack(
         raise ValueError(f"Unknown attack {attack}")
 
     # Load data and generate losses
+    # Generate the train losses
     load_experiments.load_model_from_path(
         model_path=model_path,
         model=running_model,
@@ -235,21 +249,24 @@ def run_threshold_attack(
     losses_train, classes_train, acc_train = generate_losses(
         running_model, trainset, device=device, debug=debug
     )
-
     # Remove nans, usefull for RESNET + FEMNIST at least.
-    # TODO: move this into a function for readability.
-    if losses_train.isnan().any():
-        losses_train_nonan = losses_train[~losses_train.isnan()]
-        percent_fail = (
-            (len(losses_train) - len(losses_train_nonan)) / len(losses_train) * 100
-        )
-        print(
-            f"{debug_name} - Found NaNs in train loss! Removed {percent_fail:.2f}% of train losses"
-        )
-        losses_train = losses_train_nonan
-        classes_train = classes_train[~losses_train.isnan()]
+    losses_train, classes_train = filter_nans(
+        losses=losses_train,
+        classes=classes_train,
+        debug_name=debug_name,
+        loss_type="train set",
+    )
+
+    # Generate the test losses
     losses_test, classes_test, acc_test = generate_losses(
         running_model, testset, device=device, debug=debug
+    )
+    # Remove nans, usefull for RESNET + FEMNIST at least.
+    losses_test, classes_test = filter_nans(
+        losses=losses_test,
+        classes=classes_test,
+        debug_name=debug_name,
+        loss_type="test set",
     )
     if losses_test.isnan().any():
         losses_test_nonan = losses_test[~losses_test.isnan()]
@@ -721,19 +738,22 @@ def main(
                         attack_todo=copy.deepcopy(attacks[0]),
                         debug=DEBUG,
                     )
-                    raise RuntimeError()
-                future = executor.submit(
-                    attack_experiment,
-                    copy.deepcopy(all_experiments_df),
-                    experiment_name=copy.deepcopy(experiment_name),
-                    batch_size=copy.deepcopy(batch_size),
-                    nb_agents=copy.deepcopy(nb_agents),
-                    experiment_path=os.path.join(experiments_dir, experiment_name),
-                    device_type=copy.deepcopy(device_type),
-                    attack_todo=copy.deepcopy(attack),
-                    debug=DEBUG,
-                )
-                futures.append(future)
+                    res = input("Continue? y/n\n")
+                    if res != "y":
+                        return
+                else:
+                    future = executor.submit(
+                        attack_experiment,
+                        copy.deepcopy(all_experiments_df),
+                        experiment_name=copy.deepcopy(experiment_name),
+                        batch_size=copy.deepcopy(batch_size),
+                        nb_agents=copy.deepcopy(nb_agents),
+                        experiment_path=os.path.join(experiments_dir, experiment_name),
+                        device_type=copy.deepcopy(device_type),
+                        attack_todo=copy.deepcopy(attack),
+                        debug=DEBUG,
+                    )
+                    futures.append(future)
         executor.submit(print_finished)  # To have a display when things are finished
         done, _ = concurrent.futures.wait(futures)
         results = []

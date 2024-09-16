@@ -427,6 +427,39 @@ def load_model_from_path(model_path, model, shapes, lens, device=None):
         model.to(device)
 
 
+def generate_losses(
+    model,
+    dataset,
+    loss_function=torch.nn.CrossEntropyLoss(reduction="none"),
+    device=torch.device("cpu"),
+    debug=False,
+):
+    losses = torch.tensor([])
+    classes = torch.tensor([])
+    # Fixes inconsistent batch size
+    # See https://discuss.pytorch.org/t/error-expected-more-than-1-value-per-channel-when-training/262741
+    model.eval()
+    with torch.no_grad():
+        total_correct = 0
+        total_predicted = 0
+        for x, y in dataset:
+            x = x.to(device)
+            y = y.to(device)
+            y_pred = model(x)
+            loss = loss_function(y_pred, y)
+            loss = loss.to("cpu")
+            losses = torch.cat([losses, loss])
+            y_cpu = y.to("cpu")
+            classes = torch.cat([y_cpu, classes])
+            _, predictions = torch.max(y_pred, 1)
+            for label, prediction in zip(y, predictions):
+                if label == prediction:
+                    total_correct += 1
+                total_predicted += 1
+    accuracy = total_correct / total_predicted
+    return (losses, classes, accuracy)
+
+
 def get_model_attributes(name, path):
     parsed_model = name.split("_")
     iteration = int(parsed_model[1][2:])

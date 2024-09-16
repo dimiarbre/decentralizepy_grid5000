@@ -162,39 +162,6 @@ def generate_shapes(model):
     return shapes, lens
 
 
-def generate_losses(
-    model,
-    dataset,
-    loss_function=torch.nn.CrossEntropyLoss(reduction="none"),
-    device=torch.device("cpu"),
-    debug=False,
-):
-    losses = torch.tensor([])
-    classes = torch.tensor([])
-    # Fixes inconsistent batch size
-    # See https://discuss.pytorch.org/t/error-expected-more-than-1-value-per-channel-when-training/262741
-    model.eval()
-    with torch.no_grad():
-        total_correct = 0
-        total_predicted = 0
-        for x, y in dataset:
-            x = x.to(device)
-            y = y.to(device)
-            y_pred = model(x)
-            loss = loss_function(y_pred, y)
-            loss = loss.to("cpu")
-            losses = torch.cat([losses, loss])
-            y_cpu = y.to("cpu")
-            classes = torch.cat([y_cpu, classes])
-            _, predictions = torch.max(y_pred, 1)
-            for label, prediction in zip(y, predictions):
-                if label == prediction:
-                    total_correct += 1
-                total_predicted += 1
-    accuracy = total_correct / total_predicted
-    return (losses, classes, accuracy)
-
-
 def filter_nans(losses: torch.Tensor, classes, debug_name, loss_type):
     if losses.isnan().any():
         nans_loc = losses.isnan()
@@ -246,7 +213,7 @@ def run_threshold_attack(
         lens=lens,
         device=device,
     )
-    losses_train, classes_train, acc_train = generate_losses(
+    losses_train, classes_train, acc_train = load_experiments.generate_losses(
         running_model, trainset, device=device, debug=debug
     )
     # Remove nans, usefull for RESNET + FEMNIST at least.
@@ -258,7 +225,7 @@ def run_threshold_attack(
     )
 
     # Generate the test losses
-    losses_test, classes_test, acc_test = generate_losses(
+    losses_test, classes_test, acc_test = load_experiments.generate_losses(
         running_model, testset, device=device, debug=debug
     )
     # Remove nans, usefull for RESNET + FEMNIST at least.

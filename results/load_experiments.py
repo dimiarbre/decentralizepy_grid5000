@@ -427,6 +427,26 @@ def load_model_from_path(model_path, model, shapes, lens, device=None):
         model.to(device)
 
 
+def generate_shapes(model: torch.nn.Module) -> tuple[list[tuple[int, int]], list[int]]:
+    """Generates the shapes of a model
+
+    Args:
+        model (torch.nn.Module): The model we will be loading data into
+
+    Returns:
+        shapes: a list of the shapes for each layer of the model.
+        lens (list[int]): a list of all the number of parameter for each layer.
+    """
+    shapes = []
+    lens: list[int] = []
+    with torch.no_grad():
+        for _, v in model.state_dict().items():
+            shapes.append(v.shape)
+            t = v.flatten().numpy()
+            lens.append(t.shape[0])
+    return shapes, lens
+
+
 def generate_losses(
     model,
     dataset,

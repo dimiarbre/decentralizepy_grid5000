@@ -55,7 +55,7 @@ def get_biased_threshold_acc(train_losses, test_losses, top_kth: list[int]):
 
     if max_k > len(paired_train):
         print(
-            f"\n---------\nWARNING: using window of size {max_k} when the training set only has {len(paired_train)} elements!\n-------"
+            f"---------\nWARNING: using window of size {max_k} when the training set only has {len(paired_train)} elements!\n---------"
         )
     # Remove elements when the window is bigger than the
     fixed_top_kth = [k for k in top_kth if k <= len(merged_list)]
@@ -149,17 +149,6 @@ def threshold_attack(
         "gini_auc": gini_auc,
     }
     return res
-
-
-def generate_shapes(model):
-    shapes = []
-    lens = []
-    with torch.no_grad():
-        for _, v in model.state_dict().items():
-            shapes.append(v.shape)
-            t = v.flatten().numpy()
-            lens.append(t.shape[0])
-    return shapes, lens
 
 
 def filter_nans(losses: torch.Tensor, classes, debug_name, loss_type):
@@ -454,7 +443,7 @@ def attack_experiment(
     ]
 
     running_model = model_initialiser()
-    shapes, lens = generate_shapes(running_model)
+    shapes, lens = load_experiments.generate_shapes(running_model)
 
     loss = loss_function()
     attack_object = None

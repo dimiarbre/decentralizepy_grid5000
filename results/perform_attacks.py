@@ -16,8 +16,15 @@ import load_experiments
 import numpy as np
 import pandas as pd
 import torch
+import torch.utils
+import torch.utils.data
 from LinkabilityAttack import LinkabilityAttack
-from load_experiments import ALL_ATTACKS, POSSIBLE_DATASETS, POSSIBLE_MODELS
+from load_experiments import (
+    ALL_ATTACKS,
+    POSSIBLE_DATASETS,
+    POSSIBLE_MODELS,
+    error_catching_wrapper,
+)
 from RocPlotter import RocPlotter
 from sklearn.metrics import (
     auc,
@@ -30,19 +37,6 @@ from sklearn.metrics import (
 from decentralizepy.datasets.CIFAR10 import LeNet
 
 DEBUG = False
-
-
-def error_catching_wrapper(func):
-    @functools.wraps(func)
-    def wrapped_function(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            print(f"Error occurred in function '{func.__name__}': {e}")
-            traceback.print_exc()
-            raise e
-
-    return wrapped_function
 
 
 def get_biased_threshold_acc(train_losses, test_losses, top_kth: list[int]):

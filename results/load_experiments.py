@@ -1,6 +1,8 @@
+import functools
 import json
 import os
 import time
+import traceback
 from collections import defaultdict
 from typing import Optional
 
@@ -10,7 +12,7 @@ import pandas as pd
 import torch
 import torchvision
 from localconfig import LocalConfig
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 from decentralizepy.datasets.CIFAR10 import LeNet
 from decentralizepy.datasets.Data import Data
@@ -28,6 +30,24 @@ ALL_ATTACKS = [
     "biasedthreshold",
     "threshold",
 ]
+
+
+def error_catching_wrapper(func):
+    """Wrapper that prints the stack trace when an error is raised
+    Useful when multiprocessing, as otherwise the error is just silent.
+    Tweaks were needed as it would otherwise not work in multiprocess scenario because of some weird recursive shenanigans.
+    """
+
+    @functools.wraps(func)
+    def wrapped_function(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            print(f"Error occurred in function '{func.__name__}': {e}")
+            traceback.print_exc()
+            raise e
+
+    return wrapped_function
 
 
 def read_ini(file_path: str, verbose=False) -> LocalConfig:
@@ -302,7 +322,7 @@ def load_dataset_partitioner(
     shards: int | None,
     sizes: Optional[list[float]] = None,
     debug=False,
-):
+) -> tuple[DataPartitioner, Data]:
     """Loads a data partitioner in an identical way as the experiments do
 
     Args:

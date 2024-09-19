@@ -135,7 +135,9 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
                 total_pred[label] += 1
                 total_predicted += 1
     accuracy = total_correct / total_predicted * 100
-    print(f"Test loss: {loss_val}; accuracy: {accuracy:.2f}; predictions: {total_pred}")
+    print(
+        f"Test loss: {loss_val}; accuracy: {accuracy:.2f}%; predictions: {total_pred}"
+    )
     return loss_val, accuracy, correct_pred, total_pred
 
 
@@ -266,7 +268,7 @@ def main():
     nb_epoch = 100
 
     # TODO: remove this, as it should be computed or passed through directly.
-    model = model_type(21)
+    model = model_type()
     model_params = filter(lambda p: p.requires_grad, model.parameters())
     nb_params = sum([np.prod(p.size()) for p in model_params])
     print(model)
@@ -329,7 +331,7 @@ def main():
             size_train=size_train,
         )
         # Reset the model to start from fresh parameters
-        model = model_type(nb_models)  # TODO: change this
+        model = model_type()  # TODO: change this
 
         print(f"Launching training {agent}")
         train_losses = train_classifier(

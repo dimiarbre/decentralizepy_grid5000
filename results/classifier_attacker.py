@@ -56,7 +56,7 @@ class FCNAttacker(nn.Module):
     NB: the authors seems to have lost access to the code.
     """
 
-    def __init__(self, input_dim=1):
+    def __init__(self):
         # 1,316,866 parameters.
         super(FCNAttacker, self).__init__()
         self.block1 = ConvBlock(1, 128)
@@ -263,7 +263,7 @@ def main():
     batch_size = 128
     loss_function = torch.nn.CrossEntropyLoss(reduction="none")
     size_train = 200  # 2000 in the original paper, downscaled for testing purposes: impossible to do for CIFAR split accross 128 nodes.
-    nb_epoch = 10
+    nb_epoch = 100
 
     # TODO: remove this, as it should be computed or passed through directly.
     model = model_type(21)

@@ -470,7 +470,9 @@ def generate_shapes(model: torch.nn.Module) -> tuple[list[tuple[int, int]], list
 def generate_losses(
     model,
     dataset,
-    loss_function=torch.nn.CrossEntropyLoss(reduction="none"),
+    loss_function=torch.nn.CrossEntropyLoss(
+        reduction="none"
+    ),  # We want each individual losses.
     device=torch.device("cpu"),
     debug=False,
 ):

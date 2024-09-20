@@ -257,7 +257,7 @@ def load_Femnist_labelsplit(
     nb_nodes,
     sizes,
     random_seed,
-    femnist_train_dir="datasets/Femnist_labelsplit/femnist/data/train/64nodes_10shards",  # TODO: fix this hack
+    femnist_train_dir="datasets/Femnist_labelsplit/femnist/data/train/64nodes_10shards",  # TODO: fix this hack, and load it from the config file
     femnist_test_dir="datasets/Femnist_labelsplit/femnist/data/test/test",
     debug=False,
 ):
@@ -468,7 +468,7 @@ def generate_shapes(model: torch.nn.Module) -> tuple[list[tuple[int, int]], list
 
 
 def generate_losses(
-    model,
+    model: torch.nn.Module,
     dataset,
     loss_function=torch.nn.CrossEntropyLoss(
         reduction="none"
@@ -500,6 +500,20 @@ def generate_losses(
                 total_predicted += 1
     accuracy = total_correct / total_predicted
     return (losses, classes, accuracy)
+
+
+def filter_nans(losses: torch.Tensor, classes, debug_name, loss_type):
+    if losses.isnan().any():
+        nans_loc = losses.isnan()
+        losses_nonan = losses[~nans_loc]
+        percent_fail = (len(losses) - len(losses_nonan)) / len(losses) * 100
+        print(
+            f"{debug_name} - Found NaNs in {loss_type} loss! Removed {percent_fail:.2f}% of {loss_type} losses"
+        )
+        losses = losses_nonan
+        if classes is not None:
+            classes = classes[~nans_loc]
+    return losses, classes
 
 
 def get_model_attributes(name, path):

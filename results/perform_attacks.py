@@ -145,19 +145,6 @@ def threshold_attack(
     return res
 
 
-def filter_nans(losses: torch.Tensor, classes, debug_name, loss_type):
-    if losses.isnan().any():
-        nans_loc = losses.isnan()
-        losses_nonan = losses[~nans_loc]
-        percent_fail = (len(losses) - len(losses_nonan)) / len(losses) * 100
-        print(
-            f"{debug_name} - Found NaNs in {loss_type} loss! Removed {percent_fail:.2f}% of {loss_type} losses"
-        )
-        losses = losses_nonan
-        classes = classes[~nans_loc]
-    return losses, classes
-
-
 def run_threshold_attack(
     running_model,
     model_path,
@@ -200,7 +187,7 @@ def run_threshold_attack(
         running_model, trainset, device=device, debug=debug
     )
     # Remove nans, usefull for RESNET + FEMNIST at least.
-    losses_train, classes_train = filter_nans(
+    losses_train, classes_train = load_experiments.filter_nans(
         losses=losses_train,
         classes=classes_train,
         debug_name=debug_name,
@@ -212,7 +199,7 @@ def run_threshold_attack(
         running_model, testset, device=device, debug=debug
     )
     # Remove nans, usefull for RESNET + FEMNIST at least.
-    losses_test, classes_test = filter_nans(
+    losses_test, classes_test = load_experiments.filter_nans(
         losses=losses_test,
         classes=classes_test,
         debug_name=debug_name,

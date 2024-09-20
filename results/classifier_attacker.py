@@ -1,8 +1,10 @@
 import random
+import time
 from typing import Optional
 
 import load_experiments
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -112,11 +114,15 @@ def train_classifier(
 def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.device):
     model.to(device)
     loss_function = torch.nn.CrossEntropyLoss()
-    # model.eval()
     total_correct = 0
     total_predicted = 0
-    total_pred = [0, 0]
-    correct_pred = [0, 0]
+
+    # Initialize counters for precision and recall computation
+    total_pred = [0, 0]  # Total number of samples for each class
+    correct_pred = [0, 0]  # True positives for each class
+    false_positives = [0, 0]  # False positives for each class
+    false_negatives = [0, 0]  # False negatives for each class
+
     with torch.no_grad():
         loss_val = 0.0
         count = 0
@@ -126,19 +132,40 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
             loss = loss_function(outputs, labels)
             loss_val += loss.item()
             count += 1
+
+            # Get the predicted classes
             _, predictions = torch.max(outputs, 1)
+
             for label, prediction in zip(labels, predictions):
-                # logging.debug("{} predicted as {}".format(label, prediction))
+                # Check if prediction is correct
                 if label == prediction:
                     correct_pred[label] += 1
                     total_correct += 1
+                else:
+                    false_positives[prediction] += 1
+                    false_negatives[label] += 1
                 total_pred[label] += 1
                 total_predicted += 1
+
     accuracy = total_correct / total_predicted * 100
+
+    # Calculate precision and recall for each class
+    precision = [0.0, 0.0]
+    recall = [0.0, 0.0]
+
+    for i in range(2):  # Assuming binary classification (two classes: 0 and 1)
+        if (correct_pred[i] + false_positives[i]) > 0:
+            precision[i] = correct_pred[i] / (correct_pred[i] + false_positives[i])
+        if (correct_pred[i] + false_negatives[i]) > 0:
+            recall[i] = correct_pred[i] / (correct_pred[i] + false_negatives[i])
+
+    print(f"Test loss: {loss_val}; test accuracy: {accuracy:.2f}%")
     print(
-        f"Test loss: {loss_val}; accuracy: {accuracy:.2f}%; predictions: {total_pred}"
+        f"Precision for class 0: {precision[0]*100:.2f}%, class 1: {precision[1]*100:.2f}%"
     )
-    return loss_val, accuracy, correct_pred, total_pred
+    print(f"Recall for class 0: {recall[0]*100:.2f}%, class 1: {recall[1]*100:.2f}%")
+
+    return loss_val, accuracy, precision, recall, correct_pred, total_pred
 
 
 def update_data(
@@ -152,6 +179,17 @@ def update_data(
     losses, _, _ = load_experiments.generate_losses(
         model, dataset, loss_function=loss_function, device=device, debug=debug
     )
+
+    # Remove nans
+    losses, _ = load_experiments.filter_nans(
+        losses,
+        classes=None,
+        debug_name="update_data",
+        loss_type=type(loss_function),
+    )
+    if len(losses) == 0:
+        return current_data
+
     losses = losses.unsqueeze(1)
     if current_data is None:
         return losses
@@ -161,7 +199,7 @@ def update_data(
 
 def generate_time_series_dataset(
     dataset,
-    agent_model_properties,
+    agent_model_properties: pd.DataFrame,
     attacked_model,
     loss_function,
     shapes,
@@ -171,7 +209,12 @@ def generate_time_series_dataset(
 ):
 
     all_losses_agent = None
+    # Sort so that we have a time series.
+    agent_model_properties.sort_values("iteration", inplace=True)
     for _, line in agent_model_properties.iterrows():
+        # Used to ensure everything is in the correct order.
+        iteration = line["iteration"]
+
         # Load the model of node agent at iteration iteration
         # TODO: loading time could be reduced by doing both trainset and testset losses at the same time,
         # do it if such a level of optimisation is necessary.
@@ -220,9 +263,17 @@ def generate_attacker_dataset(
     )
 
     x_train = torch.utils.data.ConcatDataset((trainset_for_train, testset_for_train))
-    y_train = torch.zeros(
-        len(x_train),
-        dtype=torch.long,  # Necessary for crossentropyloss
+    y_train = torch.cat(
+        [
+            torch.zeros(
+                len(trainset_for_train),
+                dtype=torch.long,  # Necessary for crossentropyloss
+            ),
+            torch.ones(
+                len(testset_for_train),
+                dtype=torch.long,  # Necessary for crossentropyloss
+            ),
+        ]
     )
     dataloader_train = DataLoader(
         ConcatWithLabels(x_train, y_train),
@@ -232,9 +283,17 @@ def generate_attacker_dataset(
     )
 
     x_test = torch.utils.data.ConcatDataset((trainset_for_test, testset_for_test))
-    y_test = torch.ones(
-        len(x_test),
-        dtype=torch.long,  # Necessary for crossentropyloss
+    y_test = torch.cat(
+        [
+            torch.zeros(
+                len(trainset_for_test),
+                dtype=torch.long,  # Necessary for crossentropyloss
+            ),
+            torch.ones(
+                len(testset_for_test),
+                dtype=torch.long,  # Necessary for crossentropyloss
+            ),
+        ]
     )
     dataloader_test = DataLoader(
         (ConcatWithLabels(x_test, y_test)),
@@ -246,28 +305,50 @@ def generate_attacker_dataset(
     return dataloader_train, dataloader_test
 
 
-def main():
+def main(dataset_name="CIFAR10"):
     # This is a debugging main, that loads a dummy dataset and launch an attack.
     # Full attack should be performed in "perform_attacks.py"
     import os
 
     import matplotlib.pyplot as plt
 
-    nb_agents = 128
-    nb_machines = 4
-    seed = 90
-    kshards = 2
     debug = True
-    experiment_dir = "results/my_results/test/fixing_attacks/cifar/4849292_cifar_nonoise_128nodes_1avgsteps_static_seed90_degree6_LeNet_lr0.05_3rounds"
     model_type = FCNAttacker
-    attacked_model = load_experiments.LeNet()
-    device = torch.device("cuda")
-    batch_size = 128
-    loss_function = torch.nn.CrossEntropyLoss(reduction="none")
-    size_train = 200  # 2000 in the original paper, downscaled for testing purposes: impossible to do for CIFAR split accross 128 nodes.
-    nb_epoch = 100
 
-    # TODO: remove this, as it should be computed or passed through directly.
+    device = torch.device("cuda")
+    batch_size = 4096
+    loss_function = torch.nn.CrossEntropyLoss(reduction="none")
+    size_train = 2000  # 2000 in the original paper
+    nb_epoch = 300
+    lr = 0.005
+    momentum = 0.8
+
+    # CIFAR test experiment
+    if dataset_name == "CIFAR10":
+        nb_agents = 128
+        nb_machines = 4
+        seed = 90
+        kshards = 2
+        size_train = 200  # Downscaled for testing purposes: impossible to do for CIFAR split accross 128 nodes.
+        batch_size = 16
+        experiment_dir = "results/my_results/test/fixing_attacks/cifar/4849292_cifar_nonoise_128nodes_1avgsteps_static_seed90_degree6_LeNet_lr0.05_3rounds"
+        attacked_model = load_experiments.LeNet()
+
+    # FemnistLabelSplit test experiment.
+    elif dataset_name == "FemnistLabelSplit":
+        nb_agents = 64
+        nb_machines = 2
+        seed = 90
+        kshards = None
+        # experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4860405_femnistLabelSplit_nonoise_64nodes_1avgsteps_static_seed90_degree4_RNET_lr0.01_3rounds"
+        experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4862162_femnistLabelSplit_zerosum_selfnoise_64nodes_1avgsteps_16th_static_seed90_degree4_RNET_lr0.01_3rounds"
+        attacked_model = load_experiments.RNET()
+
+    else:
+        raise ValueError(f"Unknown dataset {dataset_name}")
+
+    experiment_name = os.path.basename(experiment_dir)
+
     model = model_type()
     model_params = filter(lambda p: p.requires_grad, model.parameters())
     nb_params = sum([np.prod(p.size()) for p in model_params])
@@ -277,7 +358,7 @@ def main():
     shapes, lens = load_experiments.generate_shapes(attacked_model)
 
     trainset_partitioner, testset = load_experiments.load_dataset_partitioner(
-        "CIFAR10", nb_agents, seed, kshards, debug=debug
+        dataset_name, nb_agents, seed, kshards, debug=debug
     )
 
     testset = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
@@ -334,17 +415,38 @@ def main():
         model = model_type()  # TODO: change this
 
         print(f"Launching training {agent}")
+        t0 = time.time()
         train_losses = train_classifier(
-            model, attacker_trainset, device=device, nb_epochs=nb_epoch
+            model,
+            attacker_trainset,
+            device=device,
+            nb_epochs=nb_epoch,
+            lr=lr,
+            momentum=momentum,
         )
+        t1 = time.time()
+        print(f"Training took {(t1-t0)/60:.2f}min")
 
         res = eval_classifier(model, attacker_testset, device=device)
         plt.plot(train_losses)
-        plt.legend("Train loss evolution")
+        plt.title(f"{experiment_name} - Train loss evolution")
         plt.show()
-        raise NotImplementedError
     return
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="CIFAR10",
+        choices=["CIFAR10", "FemnistLabelSplit"],
+    )
+
+    args = parser.parse_args()
+
+    dataset = args.dataset
+
+    main(dataset)

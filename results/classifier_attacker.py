@@ -107,7 +107,7 @@ def train_classifier(
     momentum: float = 0.9,
 ):
     model.to(device)
-    loss_function = nn.CrossEntropyLoss()  # This may be a
+    loss_function = nn.MSELoss()
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     train_losses = []
 
@@ -132,7 +132,7 @@ def train_classifier(
 
 def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.device):
     model.to(device)
-    loss_function = torch.nn.CrossEntropyLoss()
+    loss_function = nn.MSELoss()
     total_correct = 0
     total_predicted = 0
 
@@ -269,6 +269,37 @@ def split_data(dataset, nb_train, generator):
     return trainset, testset
 
 
+def generate_y_data(trainset, testset):
+    y_trainset = torch.cat(  # [1,0] for local train data
+        (
+            torch.ones(
+                (len(trainset), 1),
+                # dtype=torch.long,  # Necessary for crossentropyloss
+            ),
+            torch.zeros(
+                (len(trainset), 1),
+                # dtype=torch.long,  # Necessary for crossentropyloss
+            ),
+        ),
+        dim=1,
+    )
+    y_testset = torch.cat(  # [0,1] for original test data
+        (
+            torch.zeros(
+                (len(testset), 1),
+                # dtype=torch.long,  # Necessary for crossentropyloss
+            ),
+            torch.ones(
+                (len(testset), 1),
+                # dtype=torch.long,  # Necessary for crossentropyloss
+            ),
+        ),
+        dim=1,
+    )
+    y = torch.cat([y_trainset, y_testset], dim=0)
+    return y
+
+
 def generate_attacker_dataset(
     losses_trainset, losses_testset, size_train, batch_size=256, seed=421
 ):
@@ -282,18 +313,8 @@ def generate_attacker_dataset(
     )
 
     x_train = torch.utils.data.ConcatDataset((trainset_for_train, testset_for_train))
-    y_train = torch.cat(
-        [
-            torch.zeros(
-                len(trainset_for_train),
-                dtype=torch.long,  # Necessary for crossentropyloss
-            ),
-            torch.ones(
-                len(testset_for_train),
-                dtype=torch.long,  # Necessary for crossentropyloss
-            ),
-        ]
-    )
+    y_train = generate_y_data(trainset=trainset_for_train, testset=testset_for_train)
+
     dataloader_train = DataLoader(
         ConcatWithLabels(x_train, y_train),
         shuffle=True,
@@ -302,18 +323,7 @@ def generate_attacker_dataset(
     )
 
     x_test = torch.utils.data.ConcatDataset((trainset_for_test, testset_for_test))
-    y_test = torch.cat(
-        [
-            torch.zeros(
-                len(trainset_for_test),
-                dtype=torch.long,  # Necessary for crossentropyloss
-            ),
-            torch.ones(
-                len(testset_for_test),
-                dtype=torch.long,  # Necessary for crossentropyloss
-            ),
-        ]
-    )
+    y_test = generate_y_data(trainset=trainset_for_test, testset=testset_for_test)
     dataloader_test = DataLoader(
         (ConcatWithLabels(x_test, y_test)),
         shuffle=True,
@@ -332,7 +342,8 @@ def main(dataset_name="CIFAR10"):
     import matplotlib.pyplot as plt
 
     debug = True
-    model_type = FCNAttacker
+    model_type = SimpleAttacker
+    # model_type = FCNAttacker
 
     device = torch.device("cuda")
     batch_size = 4096

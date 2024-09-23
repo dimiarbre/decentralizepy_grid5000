@@ -11,6 +11,7 @@ import torch.optim as optim
 import torch.utils
 import torch.utils.data
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
 
 class ConcatWithLabels(Dataset):
@@ -47,8 +48,8 @@ class SimpleAttacker(nn.Module):
         x = self.relu(self.fc2(x))
         x = self.fc3(x)
         x = x.squeeze(1)
-        # Removed as I use CrossEntropyLoss
-        x = self.softmax(x)
+        # Removed since we use CrossEntropyLoss
+        # x = self.softmax(x)
         return x
 
 
@@ -94,7 +95,10 @@ class FCNAttacker(nn.Module):
         x = self.bn_final(x)
         x = x.mean(dim=2)  # Global average pooling
         x = self.fc(x)
-        x = self.softmax(x)
+
+        # Removed since we decided to use CrossEntropyLoss.
+        # The original author's model appeared to have this layer.
+        # x = self.softmax(x)
         return x
 
 
@@ -107,12 +111,12 @@ def train_classifier(
     momentum: float = 0.9,
 ):
     model.to(device)
-    loss_function = nn.MSELoss()
+    loss_function = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     train_losses = []
 
-    for epoch in range(nb_epochs):
-        print(f"Training iteration {epoch}.")
+    for epoch in tqdm(range(nb_epochs)):
+        # print(f"Training iteration {epoch}.")
         model.train()
 
         running_loss = 0.0
@@ -132,7 +136,7 @@ def train_classifier(
 
 def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.device):
     model.to(device)
-    loss_function = nn.MSELoss()
+    loss_function = nn.CrossEntropyLoss()
     total_correct = 0
     total_predicted = 0
 
@@ -157,7 +161,7 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
 
             for label, prediction in zip(labels, predictions):
                 # TODO: this is when using MSE loss. Using CrossEntropyLoss will need to remove this.
-                label = torch.argmax(label)
+                # label = torch.argmax(label)
 
                 # Check if prediction is correct
                 if label == prediction:
@@ -181,7 +185,9 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
         if (correct_pred[i] + false_negatives[i]) > 0:
             recall[i] = correct_pred[i] / (correct_pred[i] + false_negatives[i])
 
-    print(f"Test loss: {loss_val}; test accuracy: {accuracy:.2f}%")
+    print(
+        f"Test loss: {loss_val}; test accuracy: {accuracy:.2f}%. Predictions: {total_pred}"
+    )
     print(
         f"Precision for class 0: {precision[0]*100:.2f}%, class 1: {precision[1]*100:.2f}%"
     )
@@ -273,32 +279,15 @@ def split_data(dataset, nb_train, generator):
 
 
 def generate_y_data(trainset, testset):
-    y_trainset = torch.cat(  # [1,0] for local train data
-        (
-            torch.ones(
-                (len(trainset), 1),
-                # dtype=torch.long,  # Necessary for crossentropyloss
-            ),
-            torch.zeros(
-                (len(trainset), 1),
-                # dtype=torch.long,  # Necessary for crossentropyloss
-            ),
-        ),
-        dim=1,
+    y_trainset = torch.zeros(
+        len(trainset),
+        dtype=torch.long,  # Necessary for crossentropyloss
     )
-    y_testset = torch.cat(  # [0,1] for original test data
-        (
-            torch.zeros(
-                (len(testset), 1),
-                # dtype=torch.long,  # Necessary for crossentropyloss
-            ),
-            torch.ones(
-                (len(testset), 1),
-                # dtype=torch.long,  # Necessary for crossentropyloss
-            ),
-        ),
-        dim=1,
+    y_testset = torch.ones(
+        len(testset),
+        dtype=torch.long,  # Necessary for crossentropyloss
     )
+
     y = torch.cat([y_trainset, y_testset], dim=0)
     return y
 
@@ -436,8 +425,8 @@ def main(dataset_name="CIFAR10"):
     loss_function = torch.nn.CrossEntropyLoss(reduction="none")
     size_train = 2000  # 2000 in the original paper
     nb_epoch = 300
-    lr = 0.005
-    momentum = 0.8
+    lr = 0.01
+    momentum = 0.9
 
     # CIFAR test experiment
     if dataset_name == "CIFAR10":
@@ -456,8 +445,8 @@ def main(dataset_name="CIFAR10"):
         nb_machines = 2
         seed = 90
         kshards = None
-        # experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4860405_femnistLabelSplit_nonoise_64nodes_1avgsteps_static_seed90_degree4_RNET_lr0.01_3rounds"
-        experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4862162_femnistLabelSplit_zerosum_selfnoise_64nodes_1avgsteps_16th_static_seed90_degree4_RNET_lr0.01_3rounds"
+        experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4860405_femnistLabelSplit_nonoise_64nodes_1avgsteps_static_seed90_degree4_RNET_lr0.01_3rounds"
+        # experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4862162_femnistLabelSplit_zerosum_selfnoise_64nodes_1avgsteps_16th_static_seed90_degree4_RNET_lr0.01_3rounds"
         attacked_model = load_experiments.RNET()
 
     else:
@@ -518,8 +507,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset",
         type=str,
-        default="CIFAR10",
-        choices=["CIFAR10", "FemnistLabelSplit"],
+        default="FemnistLabelSplit",
+        choices=["CIFAR10", "FemnistLabelSplit", "Femnist"],
     )
 
     args = parser.parse_args()

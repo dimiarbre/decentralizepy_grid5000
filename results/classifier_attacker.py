@@ -334,6 +334,89 @@ def generate_attacker_dataset(
     return dataloader_train, dataloader_test
 
 
+def classifier_attack(
+    agent_model_properties,
+    trainset,
+    testset,
+    loss_function,
+    attacked_model,
+    shapes,
+    lens,
+    device,
+    agent,
+    model_initializer,
+    size_train,
+    nb_epoch,
+    lr=0.01,
+    momentum=0.9,
+    debug=False,
+):
+    nb_models = len(agent_model_properties)
+
+    if debug:
+        print(f"Generating train losses for {agent}")
+    losses_trainset_current_agent = generate_time_series_dataset(
+        trainset,
+        agent_model_properties,
+        attacked_model,
+        loss_function,
+        shapes,
+        lens,
+        device,
+        debug=debug,
+    )
+
+    if debug:
+        print(f"Generating test losses for {agent}")
+    losses_testset_current_agent = generate_time_series_dataset(
+        testset,
+        agent_model_properties,
+        attacked_model,
+        loss_function,
+        shapes,
+        lens,
+        device,
+        debug=debug,
+    )
+
+    attacker_trainset, attacker_testset = generate_attacker_dataset(
+        losses_trainset_current_agent,
+        losses_testset_current_agent,
+        size_train=size_train,
+    )
+
+    # This handles cases where there are Nans or invalid models.
+    assert (
+        losses_trainset_current_agent.shape[1:]
+        == losses_testset_current_agent.shape[1:]
+    )
+    nb_dimensions = losses_trainset_current_agent.shape[2]
+    print(f"in_dimension: {nb_dimensions}")
+
+    # Reset the model to start from fresh parameters
+    model = model_initializer(nb_in=nb_dimensions)
+
+    model_params = filter(lambda p: p.requires_grad, model.parameters())
+    nb_params = sum([np.prod(p.size()) for p in model_params])
+    print(model)
+    print(f"{nb_params:,d} trainable parameters.")
+
+    print(f"Launching training {agent}")
+    t0 = time.time()
+    train_losses = train_classifier(
+        model,
+        attacker_trainset,
+        device=device,
+        nb_epochs=nb_epoch,
+        lr=lr,
+        momentum=momentum,
+    )
+    t1 = time.time()
+    print(f"Training took {(t1-t0)/60:.2f}min")
+    res = eval_classifier(model, attacker_testset, device=device)
+    return res, train_losses
+
+
 def main(dataset_name="CIFAR10"):
     # This is a debugging main, that loads a dummy dataset and launch an attack.
     # Full attack should be performed in "perform_attacks.py"
@@ -404,60 +487,27 @@ def main(dataset_name="CIFAR10"):
 
     groups = models_properties.groupby("agent")
     for agent, agent_model_properties in groups:
-        nb_models = len(agent_model_properties)
-        trainset_current_agent = trainset_partitioner.use(agent)
-        trainset_current_agent = torch.utils.data.DataLoader(
-            trainset_current_agent, batch_size=batch_size, shuffle=False
-        )
 
-        if debug:
-            print(f"Generating train losses for {agent}")
-        losses_trainset_current_agent = generate_time_series_dataset(
-            trainset_current_agent,
+        trainset = trainset_partitioner.use(agent)
+        trainset = DataLoader(trainset, batch_size=batch_size, shuffle=False)
+
+        res, train_losses = classifier_attack(
             agent_model_properties,
-            attacked_model,
-            loss_function,
-            shapes,
-            lens,
-            device,
-            debug=debug,
-        )
-
-        if debug:
-            print(f"Generating test losses for {agent}")
-        losses_testset_current_agent = generate_time_series_dataset(
-            testset,
-            agent_model_properties,
-            attacked_model,
-            loss_function,
-            shapes,
-            lens,
-            device,
-            debug=debug,
-        )
-
-        attacker_trainset, attacker_testset = generate_attacker_dataset(
-            losses_trainset_current_agent,
-            losses_testset_current_agent,
-            size_train=size_train,
-        )
-        # Reset the model to start from fresh parameters
-        model = model_type()  # TODO: change this
-
-        print(f"Launching training {agent}")
-        t0 = time.time()
-        train_losses = train_classifier(
-            model,
-            attacker_trainset,
+            trainset=trainset,
+            testset=testset,
+            loss_function=loss_function,
+            attacked_model=attacked_model,
+            shapes=shapes,
+            lens=lens,
             device=device,
-            nb_epochs=nb_epoch,
+            agent=agent,
+            model_initializer=model_type,
+            size_train=size_train,
+            nb_epoch=nb_epoch,
             lr=lr,
             momentum=momentum,
+            debug=debug,
         )
-        t1 = time.time()
-        print(f"Training took {(t1-t0)/60:.2f}min")
-
-        res = eval_classifier(model, attacker_testset, device=device)
         plt.plot(train_losses)
         plt.title(f"{experiment_name} - Train loss evolution")
         plt.show()

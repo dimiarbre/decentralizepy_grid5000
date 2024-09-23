@@ -33,6 +33,25 @@ class ConcatWithLabels(Dataset):
         return x, y
 
 
+class SimpleAttacker(nn.Module):
+    def __init__(self, nb_in):
+        super().__init__()
+        self.fc1 = nn.Linear(nb_in, 64)
+        self.fc2 = nn.Linear(64, 32)
+        self.fc3 = nn.Linear(32, 2)
+        self.relu = nn.ReLU()
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, x):
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.fc3(x)
+        x = x.squeeze(1)
+        # Removed as I use CrossEntropyLoss
+        x = self.softmax(x)
+        return x
+
+
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(ConvBlock, self).__init__()

@@ -77,7 +77,7 @@ class FCNAttacker(nn.Module):
     NB: the authors seems to have lost access to the code.
     """
 
-    def __init__(self):
+    def __init__(self, nb_in=None):
         # 1,316,866 parameters.
         super(FCNAttacker, self).__init__()
         self.block1 = ConvBlock(1, 128)
@@ -156,6 +156,9 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
             _, predictions = torch.max(outputs, 1)
 
             for label, prediction in zip(labels, predictions):
+                # TODO: this is when using MSE loss. Using CrossEntropyLoss will need to remove this.
+                label = torch.argmax(label)
+
                 # Check if prediction is correct
                 if label == prediction:
                     correct_pred[label] += 1
@@ -461,12 +464,6 @@ def main(dataset_name="CIFAR10"):
         raise ValueError(f"Unknown dataset {dataset_name}")
 
     experiment_name = os.path.basename(experiment_dir)
-
-    model = model_type()
-    model_params = filter(lambda p: p.requires_grad, model.parameters())
-    nb_params = sum([np.prod(p.size()) for p in model_params])
-    print(model)
-    print(f"{nb_params:,d} trainable parameters.")
 
     shapes, lens = load_experiments.generate_shapes(attacked_model)
 

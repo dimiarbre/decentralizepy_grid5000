@@ -1,5 +1,6 @@
 import random
 import time
+from math import floor
 from typing import Optional
 
 import load_experiments
@@ -7,9 +8,17 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils
 import torch.utils.data
+from sklearn.metrics import (
+    ConfusionMatrixDisplay,
+    classification_report,
+    confusion_matrix,
+    roc_auc_score,
+    roc_curve,
+)
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
@@ -109,12 +118,33 @@ def train_classifier(
     device: torch.device,
     lr: float = 0.001,
     momentum: float = 0.9,
+    weight: Optional[torch.Tensor] = None,
+    debug=False,
 ):
+    """Train a classifier
+
+    Args:
+        model (nn.Module): the initailized model
+        dataset (DataLoader): The trainset
+        nb_epochs (int): number of training iterations
+        device (torch.device): Device to do the training on.
+        lr (float, optional): Learning rate. Defaults to 0.001.
+        momentum (float, optional): Momentum. Defaults to 0.9.
+        weight (Optional[torch.Tensor], optional): Counter weights to the training class to balance classes. Defaults to None.
+        debug (bool, optional): Extra debugging prints. Defaults to False.
+
+    Returns:
+        train_losses (List[float]): list of all train losses.
+    """
     model.to(device)
-    loss_function = nn.CrossEntropyLoss()
+    if weight is not None:
+        weight.to(device)
+        if debug:
+            print(f"Reweighting losses: {weight}")
+    loss_function = nn.CrossEntropyLoss(weight=weight)
+    loss_function.to(device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     train_losses = []
-
     for epoch in tqdm(range(nb_epochs)):
         # print(f"Training iteration {epoch}.")
         model.train()
@@ -146,6 +176,10 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
     false_positives = [0, 0]  # False positives for each class
     false_negatives = [0, 0]  # False negatives for each class
 
+    y_true = torch.tensor([], dtype=torch.int32, device=device)
+    y_pred = torch.tensor([], dtype=torch.int32, device=device)
+    y_proba = torch.tensor([], dtype=torch.int32, device=device)
+
     with torch.no_grad():
         loss_val = 0.0
         count = 0
@@ -159,9 +193,14 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
             # Get the predicted classes
             _, predictions = torch.max(outputs, 1)
 
+            # TODO: may need to switch to class 0. Depends on "generate_y_data"
+            probabilities = probabilities = F.softmax(outputs, dim=1)[:, 1]
+
+            y_true = torch.cat([y_true, labels])
+            y_pred = torch.cat([y_pred, predictions])
+            y_proba = torch.cat([y_proba, probabilities])
+
             for label, prediction in zip(labels, predictions):
-                # TODO: this is when using MSE loss. Using CrossEntropyLoss will need to remove this.
-                # label = torch.argmax(label)
 
                 # Check if prediction is correct
                 if label == prediction:
@@ -193,7 +232,18 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
     )
     print(f"Recall for class 0: {recall[0]*100:.2f}%, class 1: {recall[1]*100:.2f}%")
 
-    return loss_val, accuracy, precision, recall, correct_pred, total_pred
+    conf_matrix = confusion_matrix(y_true.cpu(), y_pred.cpu(), normalize="true")
+
+    return (
+        loss_val,
+        accuracy,
+        precision,
+        recall,
+        correct_pred,
+        total_pred,
+        conf_matrix,
+        (y_true, y_proba),
+    )
 
 
 def update_data(
@@ -279,34 +329,53 @@ def split_data(dataset, nb_train, generator):
 
 
 def generate_y_data(trainset, testset):
-    y_trainset = torch.zeros(
+    y_trainset = torch.ones(
         len(trainset),
         dtype=torch.long,  # Necessary for crossentropyloss
     )
-    y_testset = torch.ones(
+    y_testset = torch.zeros(
         len(testset),
         dtype=torch.long,  # Necessary for crossentropyloss
     )
 
     y = torch.cat([y_trainset, y_testset], dim=0)
-    return y
+    trainset_size = len(trainset)
+    testset_size = len(testset)
+    total_size = trainset_size + testset_size
+    weight = torch.tensor(  # Ensure this repartition of classes matches the one of y_trainset and y_testset
+        [
+            total_size / testset_size,
+            total_size / trainset_size,
+        ],
+        dtype=torch.float32,
+    )
+    return y, weight
 
 
 def generate_attacker_dataset(
-    losses_trainset, losses_testset, size_train, batch_size=256, seed=421
+    losses_trainset, losses_testset, fractions, batch_size=256, seed=421
 ):
     generator = torch.Generator()
     generator.manual_seed(seed)
+    nb_training_samples_from_train = floor(len(losses_trainset) * fractions)
     trainset_for_train, trainset_for_test = split_data(
-        losses_trainset, nb_train=size_train, generator=generator
+        losses_trainset, nb_train=nb_training_samples_from_train, generator=generator
     )
+    nb_training_samples_from_test = floor(len(losses_testset) * fractions)
     testset_for_train, testset_for_test = split_data(
-        losses_testset, nb_train=size_train, generator=generator
+        losses_testset, nb_train=nb_training_samples_from_test, generator=generator
+    )
+
+    total_attacker_trainset_size = (
+        nb_training_samples_from_train + nb_training_samples_from_test
     )
 
     x_train = torch.utils.data.ConcatDataset((trainset_for_train, testset_for_train))
-    y_train = generate_y_data(trainset=trainset_for_train, testset=testset_for_train)
+    y_train, weight = generate_y_data(
+        trainset=trainset_for_train, testset=testset_for_train
+    )
 
+    # TODO: set a random seed to be able to reproduce results?
     dataloader_train = DataLoader(
         ConcatWithLabels(x_train, y_train),
         shuffle=True,
@@ -315,7 +384,7 @@ def generate_attacker_dataset(
     )
 
     x_test = torch.utils.data.ConcatDataset((trainset_for_test, testset_for_test))
-    y_test = generate_y_data(trainset=trainset_for_test, testset=testset_for_test)
+    y_test, _ = generate_y_data(trainset=trainset_for_test, testset=testset_for_test)
     dataloader_test = DataLoader(
         (ConcatWithLabels(x_test, y_test)),
         shuffle=True,
@@ -323,7 +392,7 @@ def generate_attacker_dataset(
         batch_size=batch_size,
     )
 
-    return dataloader_train, dataloader_test
+    return dataloader_train, dataloader_test, weight
 
 
 def classifier_attack(
@@ -337,14 +406,13 @@ def classifier_attack(
     device,
     agent,
     model_initializer,
-    size_train,
-    nb_epoch,
+    fractions: float,
+    nb_epoch: int,
+    batch_size=256,
     lr=0.01,
     momentum=0.9,
     debug=False,
 ):
-    nb_models = len(agent_model_properties)
-
     if debug:
         print(f"Generating train losses for {agent}")
     losses_trainset_current_agent = generate_time_series_dataset(
@@ -371,10 +439,12 @@ def classifier_attack(
         debug=debug,
     )
 
-    attacker_trainset, attacker_testset = generate_attacker_dataset(
+    attacker_trainset, attacker_testset, weight = generate_attacker_dataset(
         losses_trainset_current_agent,
         losses_testset_current_agent,
-        size_train=size_train,
+        fractions=fractions,
+        batch_size=batch_size,
+        seed=421,
     )
 
     # This handles cases where there are Nans or invalid models.
@@ -402,6 +472,8 @@ def classifier_attack(
         nb_epochs=nb_epoch,
         lr=lr,
         momentum=momentum,
+        weight=weight,
+        debug=debug,
     )
     t1 = time.time()
     print(f"Training took {(t1-t0)/60:.2f}min")
@@ -424,6 +496,7 @@ def main(dataset_name="CIFAR10"):
     batch_size = 4096
     loss_function = torch.nn.CrossEntropyLoss(reduction="none")
     size_train = 2000  # 2000 in the original paper
+    fractions = 0.7
     nb_epoch = 300
     lr = 0.01
     momentum = 0.9
@@ -488,15 +561,80 @@ def main(dataset_name="CIFAR10"):
             device=device,
             agent=agent,
             model_initializer=model_type,
-            size_train=size_train,
+            fractions=fractions,
             nb_epoch=nb_epoch,
+            batch_size=batch_size,
             lr=lr,
             momentum=momentum,
             debug=debug,
         )
-        plt.plot(train_losses)
-        plt.title(f"{experiment_name} - Train loss evolution")
-        plt.show()
+        (
+            loss_val,
+            accuracy,
+            precision,
+            recall,
+            correct_pred,
+            total_pred,
+            conf_matrix,
+            (y_true, y_proba),
+        ) = res
+        fig, axs = plt.subplots(2, 2)
+
+        # Plot the evolution of the train loss
+        ax = axs[0, 0]
+        ax.plot(train_losses)
+        ax.set_title(f"Train loss evolution. Final accuracy: {accuracy:.2f}%")
+
+        # Plot the confusion matrix
+        ax = axs[1, 0]
+        ConfusionMatrixDisplay(confusion_matrix=conf_matrix).plot(ax=ax, cmap="Blues")
+        ax.set_title("Normalized confusion matrix")
+
+        # Compute ROC curve and AUC
+        y_true, y_proba = y_true.cpu(), y_proba.cpu()
+        fpr, tpr, _ = roc_curve(y_true=y_true, y_score=y_proba)
+        roc_auc = roc_auc_score(y_true=y_true, y_score=y_proba)
+        # Plot the ROC-AUC
+        ax = axs[0, 1]
+        ax.plot(fpr, tpr, "b")
+
+        # current_axs.legend(loc="lower right")
+        ax.plot([0, 1], [0, 1], "r--")
+        ax.set_xlim([0, 1])
+        ax.set_ylim([0, 1])
+
+        ax.set_ylabel("True Positive Rate")
+        ax.set_xlabel("False Positive Rate")
+        ax.set_title(f"ROC-Curve - AUC: {roc_auc}")
+
+        # Plot the log ROC-AUC
+        ax = axs[1, 1]
+
+        ax.plot(fpr, tpr, "b")
+
+        # current_axs.legend(loc="lower right")
+        ax.plot([0, 1], [0, 1], "r--")
+        ax.set_xlim([0, 1])
+        ax.set_ylim([0, 1])
+
+        ax.set_ylabel("True Positive Rate")
+        ax.set_xlabel("False Positive Rate")
+        ax.set_yscale("log")
+        ax.set_xscale("log")
+        ax.set_xlim([1e-5, 1])
+        ax.set_ylim([1e-5, 1])
+        ax.set_title("Log scale ROC-Curve")
+
+        # Adjust the layout if necessary
+        fig.suptitle(f"{experiment_name}")
+        plt.tight_layout()
+
+        figpath = os.path.join(
+            experiment_dir, f"classifier_attack_summary_node{agent}.png"
+        )
+        fig.savefig(figpath)
+
+        plt.close(fig)
     return
 
 
@@ -507,7 +645,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset",
         type=str,
-        default="FemnistLabelSplit",
+        default="CIFAR10",
         choices=["CIFAR10", "FemnistLabelSplit", "Femnist"],
     )
 

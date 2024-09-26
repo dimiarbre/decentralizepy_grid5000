@@ -81,7 +81,7 @@ def femnist_read_file(file_path):
     )
 
 
-def femnist_read_dir(data_dir):
+def femnist_read_dir(data_dir) -> tuple[list, list, dict]:
     """
     Function to read all the Femnist data files in the directory
 
@@ -232,15 +232,16 @@ def load_Femnist_labelsplit(
     nb_nodes,
     sizes,
     random_seed,
-    femnist_train_dir="datasets/Femnist_labelsplit/femnist/data/train/64nodes",
+    femnist_train_dir="datasets/Femnist_labelsplit/femnist/data/train/64nodes_10shards",  # TODO: fix this hack
     femnist_test_dir="datasets/Femnist_labelsplit/femnist/data/test/test",
     debug=False,
 ):
     all_data = []
     for node in range(nb_nodes):
+        filename = f"data_{node}.pt"
         if debug:
-            print(f"Loading FEMNIST for node {node}.")
-        node_file = os.path.join(femnist_train_dir, f"data_{node}.pt")
+            print(f"Loading FEMNISTLabelSplit {filename} for node {node}.")
+        node_file = os.path.join(femnist_train_dir, filename)
         node_data = torch.load(node_file)
         temp = np.array(
             [data[0] for data in node_data],
@@ -276,6 +277,10 @@ POSSIBLE_DATASETS = {
         load_Femnist,
         62,
     ),
+    "FemnistLabelSplit": (
+        load_Femnist_labelsplit,
+        62,
+    ),
 }
 
 POSSIBLE_MODELS = {
@@ -285,7 +290,6 @@ POSSIBLE_MODELS = {
 }
 
 
-# Problem: this function is built upon the loading function of CIFAR10 - no "general" function that can be easily reused can be found.
 def load_dataset_partitioner(
     dataset_name: str,
     total_agents: int,
@@ -342,7 +346,7 @@ def load_dataset_partitioner(
     c_len = len(trainset)
     if sizes is None:
         # Equal distribution of data among processes, from CIFAR10 and not a simplified function.
-        # Speak with Rishi about having a separate functino that performs this?
+        # Speak with Rishi about having a separate function that performs this?
         e = c_len // total_agents
         frac = e / c_len
         sizes = [frac] * total_agents
@@ -502,7 +506,7 @@ def get_all_experiments_properties(
 
 
 def main():
-    DATASET = "CIFAR10"
+    DATASET = "Femnist"
     NB_CLASSES = POSSIBLE_DATASETS[DATASET][1]
     NB_AGENTS = 128
     NB_MACHINES = 8
@@ -525,7 +529,7 @@ def main():
     )
     print(all_models_df)
 
-    EXPERIMENTS_DIR = "results/my_results/icml_experiments/cifar10/"
+    EXPERIMENTS_DIR = "results/my_results/test/testing_femnist_convergence_rates"
 
     t0 = time.time()
     all_experiments_df = get_all_experiments_properties(

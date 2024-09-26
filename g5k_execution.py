@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 import subprocess
@@ -23,12 +24,10 @@ def save_results(
     # Backup the logs to main g5k storage
     # Conditional download of logs to ease the load on the remote storage
     if not download_logs:
+        command = f"rsync -Crvz --exclude '**/graphs/*' --exclude '*.log' {remote_logs_dir}/* {remote_result_dir}/"
         # Do not back up the graphs unless absolutely necessary (they are here for debugging purposes)
-        result = en.run_command(
-            f"rsync -Crvz --exclude '**/graphs/*' --exclude '*.log' {remote_logs_dir}/* {remote_result_dir}/",
-            roles=roles["head"],
-        )
-        synchro_command = f'rsync -Crvz --exclude "**/graphs/*" --exclude "ip.json" --exclude "*.ini"  {remote_logs_dir}/* {remote_result_dir}/'
+        result = en.run_command(command, roles=roles["head"])
+        synchro_command = f'rsync -Crvz --exclude "**/graphs/*" --exclude "ip.json" --exclude "*.ini" --exclude "*.log"  {remote_logs_dir}/* {remote_result_dir}/'
     else:
         result = en.run_command(
             f"rsync -Crvz {remote_logs_dir}/* {remote_result_dir}/", roles=roles["head"]
@@ -198,6 +197,8 @@ def launch_experiment(g5k_config, decentralizepy_config, debug, is_remote):
     provider = en.G5k(conf)
     roles, networks = provider.init()
 
+    time_start = time.time()
+
     cpu_info = en.run_command("lscpu; cat /proc/cpuinfo", roles=roles)
 
     # Install glances for profiling
@@ -310,33 +311,36 @@ def launch_experiment(g5k_config, decentralizepy_config, debug, is_remote):
         print(
             f"Job finished normally and was deleted, main command took {(t1-t0)/(60*60):.2f} hours to run."
         )
-    return provider
+    time_finish = time.time()
+    duration = time_finish - time_start
+    return provider, duration
 
 
 if __name__ == "__main__":
-    args = sys.argv
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "g5k_config",
+        help="Path to the g5k configuration (a json).",
+        default="g5k_config/small_test_run.json",
+    )
+    parser.add_argument(
+        "--remote",
+        action="store_true",
+        help="If the job is run on a remote server. Disables data downloading.",
+    )
 
-    IS_REMOTE = False
-    DEBUG = False
-    if len(args) < 2:
-        G5K_CONFIG_PATH = "small_test_run.json"
-        print(
-            f'Using default config "{G5K_CONFIG_PATH}" as no arg (or too much args) was provided.'
-            + "Setting to debug mode"
-        )
-        G5K_CONFIG_PATH = "g5k_config/" + G5K_CONFIG_PATH
-        DEBUG = True
-    elif len(args) == 2:
-        G5K_CONFIG_PATH = args[1]
-        DEBUG = False
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Run with debug. Add prints, launch job manually if on 1 machine.",
+    )
 
-    else:
-        G5K_CONFIG_PATH = args[1]
-        if args[2] in ["DEBUG", "Debug", "debug"]:
-            DEBUG = True
-        elif args[2] in ["Remote", "remote", "REMOTE"]:
-            IS_REMOTE = True
-            DEBUG = False
+    args = parser.parse_args()
+
+    G5K_CONFIG_PATH = args.g5k_config
+    IS_REMOTE = args.remote
+    DEBUG = args.debug
+
     with open(G5K_CONFIG_PATH) as f:
         g5k_config = json.load(f)
 
@@ -346,7 +350,7 @@ if __name__ == "__main__":
         config_content_lines = decentralizepy_config.readlines()
         decentralizepy_config_content = "".join(config_content_lines)
         print(decentralizepy_config_content)
-    provider = launch_experiment(
+    provider, duration = launch_experiment(
         g5k_config=g5k_config,
         decentralizepy_config=decentralizepy_config_content,
         debug=DEBUG,

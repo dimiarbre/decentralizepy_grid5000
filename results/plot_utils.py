@@ -31,11 +31,27 @@ ATTRIBUTE_DICT = {
         "64th",
         "128th",
     ],
-    "lr": ["lr0.05", "lr0.01"],
+    "lr": ["lr0.05", "lr0.01", "lr0.10"],
     "local_rounds": ["1rounds", "3rounds"],
     "batch_size": ["batch64"],
     "seed": [f"seed{val}" for val in range(90, 106)],
+    "model": ["LeNet", "CNN", "RNET"],
 }
+
+
+def percentile(n):
+    """Function to create the percentile aggregator.
+    Taken from https://stackoverflow.com/questions/17578115/pass-percentiles-to-pandas-agg-function
+
+    Args:
+        n (float): The percentage of the percentile. Can be 0.5,0.95, ...
+    """
+
+    def percentile_(x):
+        return x.quantile(n)
+
+    percentile_.__name__ = "percentile_{:02.0f}".format(100 * n)
+    return percentile_
 
 
 def get_attributes(filename, attribute_dict=ATTRIBUTE_DICT):
@@ -230,8 +246,8 @@ def plot_all_experiments(
         col_order=col_ordering,
         sizes=(1, 5),
     )
-    plot.fig.suptitle(plot_name)
-    plot.fig.subplots_adjust(top=0.9)
+    plot.figure.suptitle(plot_name)
+    plot.figure.subplots_adjust(top=0.9)
     is_unique = all_equals(
         [
             attribute_value
@@ -309,8 +325,8 @@ def scatter_all_experiments(
         # col_order=col_ordering,
         # sizes=(5, 10),
     )
-    plot.fig.suptitle(plot_name)
-    plot.fig.subplots_adjust(top=0.9)
+    plot.figure.suptitle(plot_name)
+    plot.figure.subplots_adjust(top=0.9)
     if save_directory is not None:
         savefile = f"{save_directory}{plot_name.replace(' ','_')}.pdf"
         print(f"Saving to {savefile}")

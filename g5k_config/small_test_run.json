@@ -13,5 +13,5 @@
     "cluster" : "paravance",
     "queue":"default",
     "STORAGE":"GROUP",
-    "LOCAL_SAVE_DIR" : "results/my_results/test/testing_logging/"
+    "LOCAL_SAVE_DIR" : "results/my_results/test/testing_femnist_zsumexperiments/"
 }

@@ -18,6 +18,7 @@ import pandas as pd
 import torch
 import torch.utils
 import torch.utils.data
+from classifier_attacker import SimpleAttacker, run_classifier_attack
 from LinkabilityAttack import LinkabilityAttack
 from load_experiments import (
     ALL_ATTACKS,
@@ -122,9 +123,7 @@ def threshold_attack(
     gini_auc = 2 * roc_auc - 1
 
     if plotter is not None:
-        fpr, tpr, thresholds = roc_curve(
-            y_true, y_pred, pos_label=1
-        )  # We take the opposite of the losses for the ROC-curve function
+        fpr, tpr, thresholds = roc_curve(y_true, y_pred, pos_label=1)
 
         plotter.plot_all(
             fpr,
@@ -341,10 +340,10 @@ def attack_experiment(
     experiment_name: str,
     batch_size: int,
     nb_agents: int,
-    experiment_path,
+    experiment_path: str,
     device_type: str = "cpu",
     attack_todo="threshold",
-    loss_function=torch.nn.CrossEntropyLoss,
+    loss_initializer=torch.nn.CrossEntropyLoss,
     debug=False,
 ):
     # Load this experiment's configuration file
@@ -363,13 +362,14 @@ def attack_experiment(
         kshards = load_experiments.safe_load_int(config, "DATASET", "shards")
 
     model_name = config.dataset.model_class
-    model_initialiser = POSSIBLE_MODELS[model_name]
+    target_model_initializer = POSSIBLE_MODELS[model_name]
 
     assert attack_todo in [
         "threshold",
         "linkability",
         "biasedthreshold",
         "threshold+biasedthreshold",  # Those two attacks can be combined to save time and energy.
+        "classifier",
     ]
 
     if attack_todo == "threshold+biasedthreshold":
@@ -398,7 +398,7 @@ def attack_experiment(
         else:
             results_files["biasedthreshold"] = result_file_biasedthreshold
 
-    if attack_todo in ["linkability", "threshold", "biasedthreshold"]:
+    if attack_todo in ["linkability", "threshold", "biasedthreshold", "classifier"]:
         results_files = {}
         results_file = os.path.join(
             experiment_path, f"{attack_todo}_{experiment_name}.csv"
@@ -423,10 +423,9 @@ def attack_experiment(
         experiment_df["experiment_name"] == experiment_name
     ]
 
-    running_model = model_initialiser()
+    running_model = target_model_initializer()
     shapes, lens = load_experiments.generate_shapes(running_model)
 
-    loss = loss_function()
     attack_object = None
     # This is a trick to save time: only have one attack instance for all the experiment
     # instead of creating a new one for each model in the experiment.
@@ -435,12 +434,35 @@ def attack_experiment(
         attack_object = LinkabilityAttack(
             num_clients=nb_agents,
             client_datasets=trainset_partitioner,
-            loss=loss,
+            # For linkability attack, we only look at aggregated loss, so we want reduction.
+            # Hence, no 'reduction="none" parameter.'
+            loss=loss_initializer(),
             eval_batch_size=batch_size,
             device=device,
         )
 
     total_result = {}
+    if attack_todo == "classifier":
+        total_result["classifier"] = run_classifier_attack(
+            models_properties=current_experiment,
+            experiment_dir=experiment_path,
+            trainset_partitioner=trainset_partitioner,
+            testset=testset,
+            loss_function=loss_initializer(reduction="none"),
+            attacked_model=running_model,
+            shapes_target=shapes,
+            lens_target=lens,
+            device=device,
+            batch_size=batch_size,
+            attacker_model_initializer=SimpleAttacker,
+        )
+        save_results(
+            results_files=results_files,
+            total_result=total_result,
+            experiment_name=experiment_name,
+        )
+        return
+
     agent_list = sorted(pd.unique(current_experiment["agent"]))
     for agent in agent_list:
         roc_plotter_classes: list[RocPlotter] = []
@@ -552,6 +574,19 @@ def attack_experiment(
                     [total_result[attack], results[attack]]
                 )
 
+    save_results(
+        results_files=results_files,
+        total_result=total_result,
+        experiment_name=experiment_name,
+    )
+    t2 = time.time()
+    print(
+        f"Finished {attack_todo} attack on {experiment_name} in {(t2-t1)/3600:.2f}hours"
+    )
+    return
+
+
+def save_results(results_files, total_result, experiment_name):
     # save all the attacks
     for current_attack, result_file in results_files.items():
         res = total_result[current_attack]
@@ -573,11 +608,6 @@ def attack_experiment(
         # Save the file
         print(f"Writing results to {result_file}")
         res.to_csv(result_file)
-    t2 = time.time()
-    print(
-        f"Finished {attack_todo} attack on {experiment_name} in {(t2-t1)/3600:.2f}hours"
-    )
-    return
 
 
 def clear_models(experiment_name: str, experiment_path: str):
@@ -766,7 +796,7 @@ if __name__ == "__main__":
     DEBUG = args.debug
     NB_AGENTS = args.nb_agents
     NB_MACHINES = args.nb_machines
-    ALL_ATTACKS = ["threshold+biasedthreshold"]
+    ALL_ATTACKS = ["classifier"]
 
     main(
         experiments_dir=EXPERIMENT_DIR,

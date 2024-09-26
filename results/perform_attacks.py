@@ -408,7 +408,7 @@ def attack_experiment(
                 f"{attack_todo}-attack already computed for {experiment_name}, skipping"
             )
             return
-        results_files[attack_todo] = [results_file]
+        results_files[attack_todo] = results_file
 
     device = torch.device(device_type)
     print(f"Launching {attack_todo}-attack on {experiment_name}.")
@@ -460,6 +460,10 @@ def attack_experiment(
             results_files=results_files,
             total_result=total_result,
             experiment_name=experiment_name,
+        )
+        t2 = time.time()
+        print(
+            f"Finished {attack_todo} attack on {experiment_name} in {(t2-t1)/3600:.2f}hours"
         )
         return
 
@@ -604,7 +608,9 @@ def save_results(results_files, total_result, experiment_name):
                 f"Only {res.shape[0]} in the result for {current_attack} - {experiment_name}"
             )
             print(res)
-            raise ValueError(res)
+        # This code fragment breaks classifier attacks, as we only attack a few number of nodes.
+        #     raise ValueError(res)
+
         # Save the file
         print(f"Writing results to {result_file}")
         res.to_csv(result_file)

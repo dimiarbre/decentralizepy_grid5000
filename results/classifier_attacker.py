@@ -1,9 +1,11 @@
+import os
 import random
 import time
 from math import floor
 from typing import Optional
 
 import load_experiments
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
@@ -280,8 +282,8 @@ def generate_time_series_dataset(
     agent_model_properties: pd.DataFrame,
     attacked_model,
     loss_function,
-    shapes,
-    lens,
+    shapes_target,
+    lens_target,
     device,
     debug=False,
 ):
@@ -297,7 +299,11 @@ def generate_time_series_dataset(
         # TODO: loading time could be reduced by doing both trainset and testset losses at the same time,
         # do it if such a level of optimisation is necessary.
         load_experiments.load_model_from_path(
-            line["file"], attacked_model, shapes=shapes, lens=lens, device=device
+            line["file"],
+            attacked_model,
+            shapes=shapes_target,
+            lens=lens_target,
+            device=device,
         )
 
         all_losses_agent = update_data(
@@ -401,11 +407,11 @@ def classifier_attack(
     testset,
     loss_function,
     attacked_model,
-    shapes,
-    lens,
+    shapes_target,
+    lens_target,
     device,
     agent,
-    model_initializer,
+    attacker_model_initializer,
     fractions: float,
     nb_epoch: int,
     batch_size=256,
@@ -420,8 +426,8 @@ def classifier_attack(
         agent_model_properties,
         attacked_model,
         loss_function,
-        shapes,
-        lens,
+        shapes_target,
+        lens_target,
         device,
         debug=debug,
     )
@@ -433,8 +439,8 @@ def classifier_attack(
         agent_model_properties,
         attacked_model,
         loss_function,
-        shapes,
-        lens,
+        shapes_target,
+        lens_target,
         device,
         debug=debug,
     )
@@ -456,17 +462,18 @@ def classifier_attack(
     print(f"in_dimension: {nb_dimensions}")
 
     # Reset the model to start from fresh parameters
-    model = model_initializer(nb_in=nb_dimensions)
+    attacker_model = attacker_model_initializer(nb_in=nb_dimensions)
 
-    model_params = filter(lambda p: p.requires_grad, model.parameters())
-    nb_params = sum([np.prod(p.size()) for p in model_params])
-    print(model)
-    print(f"{nb_params:,d} trainable parameters.")
+    model_params = filter(lambda p: p.requires_grad, attacker_model.parameters())
+    if debug:
+        nb_params = sum([np.prod(p.size()) for p in model_params])
+        print(attacker_model)
+        print(f"{nb_params:,d} trainable parameters.")
+        print(f"Launching training {agent}")
 
-    print(f"Launching training {agent}")
     t0 = time.time()
     train_losses = train_classifier(
-        model,
+        attacker_model,
         attacker_trainset,
         device=device,
         nb_epochs=nb_epoch,
@@ -475,18 +482,173 @@ def classifier_attack(
         weight=weight,
         debug=debug,
     )
-    t1 = time.time()
-    print(f"Training took {(t1-t0)/60:.2f}min")
-    res = eval_classifier(model, attacker_testset, device=device)
+    if debug:
+        t1 = time.time()
+        print(f"Training took {(t1-t0)/60:.2f}min")
+    res = eval_classifier(attacker_model, attacker_testset, device=device)
     return res, train_losses
+
+
+def generate_statistics(
+    experiment_name,
+    experiment_dir,
+    train_losses,
+    conf_matrix,
+    y_true,
+    y_proba,
+    roc_auc,
+    accuracy,
+    node_id,
+):
+    fig, axs = plt.subplots(2, 2)
+
+    # Plot the evolution of the train loss
+    ax = axs[0, 0]
+    ax.plot(train_losses)
+    ax.set_title(f"Train loss evolution. Final accuracy: {accuracy:.2f}%")
+
+    # Plot the confusion matrix
+    ax = axs[1, 0]
+    ConfusionMatrixDisplay(confusion_matrix=conf_matrix).plot(ax=ax, cmap="Blues")
+    ax.set_title("Normalized confusion matrix")
+
+    # Compute ROC curve and AUC
+    fpr, tpr, _ = roc_curve(y_true=y_true, y_score=y_proba)
+    # Plot the ROC-AUC
+    ax = axs[0, 1]
+    ax.plot(fpr, tpr, "b")
+
+    # current_axs.legend(loc="lower right")
+    ax.plot([0, 1], [0, 1], "r--")
+    ax.set_xlim([0, 1])
+    ax.set_ylim([0, 1])
+
+    ax.set_ylabel("True Positive Rate")
+    ax.set_xlabel("False Positive Rate")
+    ax.set_title(f"ROC-Curve - AUC: {roc_auc}")
+
+    # Plot the log ROC-AUC
+    ax = axs[1, 1]
+
+    ax.plot(fpr, tpr, "b")
+
+    # current_axs.legend(loc="lower right")
+    ax.plot([0, 1], [0, 1], "r--")
+    ax.set_xlim([0, 1])
+    ax.set_ylim([0, 1])
+
+    ax.set_ylabel("True Positive Rate")
+    ax.set_xlabel("False Positive Rate")
+    ax.set_yscale("log")
+    ax.set_xscale("log")
+    ax.set_xlim([1e-5, 1])
+    ax.set_ylim([1e-5, 1])
+    ax.set_title("Log scale ROC-Curve")
+
+    # Adjust the layout if necessary
+    fig.suptitle(f"{experiment_name}")
+    plt.tight_layout()
+
+    figpath = os.path.join(
+        experiment_dir, f"classifier_attack_summary_node{node_id}.png"
+    )
+    fig.savefig(figpath)
+
+    plt.close(fig)
+    return
+
+
+def run_classifier_attack(
+    models_properties: pd.DataFrame,
+    experiment_dir,
+    trainset_partitioner,
+    testset,
+    loss_function,
+    attacked_model,
+    shapes_target,
+    lens_target,
+    device,
+    batch_size,
+    attacker_model_initializer=SimpleAttacker,
+    fractions=0.7,
+    nb_epoch=300,
+    lr=0.01,
+    momentum=0.9,
+    debug=False,
+):
+    experiment_name = os.path.basename(experiment_dir)
+    groups = models_properties.groupby("agent")
+    all_results = pd.DataFrame({})
+    for agent, agent_model_properties in groups:
+        targets = agent_model_properties["target"].to_numpy()
+        # TODO: this probably won't work on a dynamic topology, I'll probably need to do a second group by
+        # Or revamp how models are logged (which is already a todo)
+        assert (targets[0] == targets).all(), f"Not uniform targets {targets}"
+        target = targets[0]
+        trainset = trainset_partitioner.use(agent)
+        trainset = DataLoader(trainset, batch_size=batch_size, shuffle=False)
+        current_res, train_losses = classifier_attack(
+            agent_model_properties,
+            trainset=trainset,
+            testset=testset,
+            loss_function=loss_function,
+            attacked_model=attacked_model,
+            shapes_target=shapes_target,
+            lens_target=lens_target,
+            device=device,
+            agent=agent,
+            attacker_model_initializer=attacker_model_initializer,
+            fractions=fractions,
+            nb_epoch=nb_epoch,
+            batch_size=batch_size,
+            lr=lr,
+            momentum=momentum,
+            debug=debug,
+        )
+        (
+            loss_val,
+            accuracy,
+            precision,
+            recall,
+            correct_pred,
+            total_pred,
+            conf_matrix,
+            (y_true, y_proba),
+        ) = current_res
+
+        y_true, y_proba = y_true.cpu(), y_proba.cpu()
+        roc_auc = roc_auc_score(y_true=y_true, y_score=y_proba)
+
+        # Generate visualization plots.
+        generate_statistics(
+            experiment_name=experiment_name,
+            experiment_dir=experiment_dir,
+            train_losses=train_losses,
+            conf_matrix=conf_matrix,
+            y_true=y_true,
+            y_proba=y_proba,
+            roc_auc=roc_auc,
+            accuracy=accuracy,
+            node_id=agent,
+        )
+
+        # Organize results in the DF.
+        current_res = {}
+        current_res["agent"] = [agent]
+        current_res["roc_auc"] = [roc_auc]
+        current_res["target"] = [target]
+        current_res["attacker_model"] = [attacker_model_initializer.__name__]
+
+        df_current_res = pd.DataFrame(current_res)
+        df_current_res.set_index("agent")
+        all_results = pd.concat([all_results, df_current_res])
+
+    return all_results
 
 
 def main(dataset_name="CIFAR10"):
     # This is a debugging main, that loads a dummy dataset and launch an attack.
     # Full attack should be performed in "perform_attacks.py"
-    import os
-
-    import matplotlib.pyplot as plt
 
     debug = True
     model_type = SimpleAttacker
@@ -518,8 +680,9 @@ def main(dataset_name="CIFAR10"):
         nb_machines = 2
         seed = 90
         kshards = None
-        experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4860405_femnistLabelSplit_nonoise_64nodes_1avgsteps_static_seed90_degree4_RNET_lr0.01_3rounds"
+        # experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4860405_femnistLabelSplit_nonoise_64nodes_1avgsteps_static_seed90_degree4_RNET_lr0.01_3rounds"
         # experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4862162_femnistLabelSplit_zerosum_selfnoise_64nodes_1avgsteps_16th_static_seed90_degree4_RNET_lr0.01_3rounds"
+        experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4861560_femnistLabelSplit_muffliato_64nodes_5avgsteps_16th_static_seed90_degree4_RNET_lr0.01_3rounds"
         attacked_model = load_experiments.RNET()
 
     else:
@@ -544,97 +707,24 @@ def main(dataset_name="CIFAR10"):
     )
     print(models_properties)
 
-    groups = models_properties.groupby("agent")
-    for agent, agent_model_properties in groups:
-
-        trainset = trainset_partitioner.use(agent)
-        trainset = DataLoader(trainset, batch_size=batch_size, shuffle=False)
-
-        res, train_losses = classifier_attack(
-            agent_model_properties,
-            trainset=trainset,
-            testset=testset,
-            loss_function=loss_function,
-            attacked_model=attacked_model,
-            shapes=shapes,
-            lens=lens,
-            device=device,
-            agent=agent,
-            model_initializer=model_type,
-            fractions=fractions,
-            nb_epoch=nb_epoch,
-            batch_size=batch_size,
-            lr=lr,
-            momentum=momentum,
-            debug=debug,
-        )
-        (
-            loss_val,
-            accuracy,
-            precision,
-            recall,
-            correct_pred,
-            total_pred,
-            conf_matrix,
-            (y_true, y_proba),
-        ) = res
-        fig, axs = plt.subplots(2, 2)
-
-        # Plot the evolution of the train loss
-        ax = axs[0, 0]
-        ax.plot(train_losses)
-        ax.set_title(f"Train loss evolution. Final accuracy: {accuracy:.2f}%")
-
-        # Plot the confusion matrix
-        ax = axs[1, 0]
-        ConfusionMatrixDisplay(confusion_matrix=conf_matrix).plot(ax=ax, cmap="Blues")
-        ax.set_title("Normalized confusion matrix")
-
-        # Compute ROC curve and AUC
-        y_true, y_proba = y_true.cpu(), y_proba.cpu()
-        fpr, tpr, _ = roc_curve(y_true=y_true, y_score=y_proba)
-        roc_auc = roc_auc_score(y_true=y_true, y_score=y_proba)
-        # Plot the ROC-AUC
-        ax = axs[0, 1]
-        ax.plot(fpr, tpr, "b")
-
-        # current_axs.legend(loc="lower right")
-        ax.plot([0, 1], [0, 1], "r--")
-        ax.set_xlim([0, 1])
-        ax.set_ylim([0, 1])
-
-        ax.set_ylabel("True Positive Rate")
-        ax.set_xlabel("False Positive Rate")
-        ax.set_title(f"ROC-Curve - AUC: {roc_auc}")
-
-        # Plot the log ROC-AUC
-        ax = axs[1, 1]
-
-        ax.plot(fpr, tpr, "b")
-
-        # current_axs.legend(loc="lower right")
-        ax.plot([0, 1], [0, 1], "r--")
-        ax.set_xlim([0, 1])
-        ax.set_ylim([0, 1])
-
-        ax.set_ylabel("True Positive Rate")
-        ax.set_xlabel("False Positive Rate")
-        ax.set_yscale("log")
-        ax.set_xscale("log")
-        ax.set_xlim([1e-5, 1])
-        ax.set_ylim([1e-5, 1])
-        ax.set_title("Log scale ROC-Curve")
-
-        # Adjust the layout if necessary
-        fig.suptitle(f"{experiment_name}")
-        plt.tight_layout()
-
-        figpath = os.path.join(
-            experiment_dir, f"classifier_attack_summary_node{agent}.png"
-        )
-        fig.savefig(figpath)
-
-        plt.close(fig)
+    res = run_classifier_attack(
+        models_properties=models_properties,
+        experiment_dir=experiment_dir,
+        trainset_partitioner=trainset_partitioner,
+        testset=testset,
+        loss_function=loss_function,
+        attacked_model=attacked_model,
+        shapes_target=shapes,
+        lens_target=lens,
+        device=device,
+        batch_size=batch_size,
+        attacker_model_initializer=model_type,
+        fractions=fractions,
+        nb_epoch=nb_epoch,
+        lr=lr,
+        momentum=momentum,
+        debug=debug,
+    )
     return
 
 

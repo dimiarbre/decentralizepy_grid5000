@@ -67,6 +67,13 @@ def read_ini(file_path: str, verbose=False) -> LocalConfig:
     return config
 
 
+VARIANT_MAPPER = {  # The parameters for "sharing_package" and "sharing_class".
+    "nonoise": ("decentralizepy.sharing.SharingAsymmetric", "SharingAsymmetric"),
+    "muffliato": ("decentralizepy.sharing.Muffliato", "Muffliato"),
+    "zerosum_selfnoise": ("decentralizepy.sharing.ZeroSumSharing", "ZeroSumSharing"),
+}
+
+
 def handle_special_parameters_values(
     config, parameter, parameter_value, variant, dataset
 ):
@@ -77,10 +84,19 @@ def handle_special_parameters_values(
         assert (
             parameter_value == variant
         )  # Sanity check, would be an error if it is not the case
-        if (parameter_value, dataset) not in baseconfig_mapping:
+        if ("any", dataset) not in baseconfig_mapping and (
+            parameter_value,
+            dataset,
+        ) not in baseconfig_mapping:
             raise ValueError(
                 f"Invalid parameter value for {parameter}: {parameter_value}"
             )
+        sharing_package, sharing_class = VARIANT_MAPPER[parameter_value]
+        config.set("SHARING", "sharing_package", sharing_package)
+        config.set("SHARING", "sharing_class", sharing_class)
+        if parameter_value in ["zerosum_selfnoise", "zerosum_noselfnoise"]:
+            config.set("SHARING", "self_noise", parameter_value == "zerosum_selfnoise")
+
     elif parameter == "noise_level":
         if variant == "nonoise":
             raise ValueError(
@@ -137,7 +153,7 @@ baseconfig_mapping = {
     ("zerosum_noselfnoise", "femnistLabelSplit"): os.path.join(
         "run_configuration/femnist_labelsplit_zerosum_noselfnoise.ini"
     ),
-    ("nonoise", "movielens"): os.path.join(
+    ("any", "movielens"): os.path.join(
         "run_configuration/config_movielens_sharing.ini"
     ),
 }
@@ -165,7 +181,11 @@ noises_mapping = {
 
 def generate_config(combination_dict, dataset):
     variant = combination_dict["variant"]
-    config = read_ini(baseconfig_mapping[(variant, dataset)])
+    if ("any", dataset) in baseconfig_mapping:
+        baseconfig = baseconfig_mapping[("any", dataset)]
+    else:
+        baseconfig = baseconfig_mapping[(variant, dataset)]
+    config = read_ini(baseconfig)
     for parameter, parameter_value in combination_dict.items():
         is_handled = handle_special_parameters_values(
             config=config,

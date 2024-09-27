@@ -1,10 +1,10 @@
 {
     "job_name": "movielens_nonoise",
-    "walltime": "0:30:00",
+    "walltime": "0:20:00",
     "GRAPH_FILE": "100nodes_4regular.edges",
     "NB_AGENTS": 100,
     "NB_MACHINE":2,
-    "NB_ITERATION" :10000,
+    "NB_ITERATION" :5000,
     "AVERAGING_STEPS" : 1,
     "TEST_AFTER" :50,
     "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",

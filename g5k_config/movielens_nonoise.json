@@ -9,7 +9,7 @@
     "TEST_AFTER" :50,
     "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",
     "LOG_LEVEL" : "DEBUG",
-    "CONFIG_NAME" : "config_movielens_muffliato.ini",
+    "CONFIG_NAME" : "config_movielens_sharing.ini",
     "cluster" : "paradoxe",
     "queue":"default",
     "STORAGE":"GROUP",

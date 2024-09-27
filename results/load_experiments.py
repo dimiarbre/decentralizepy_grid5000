@@ -22,7 +22,12 @@ from decentralizepy.datasets.Partitioner import (
 )
 
 # Sort this by longest computation time first to have a better scheduling policy.
-ALL_ATTACKS = ["linkability", "threshold"]
+ALL_ATTACKS = [
+    "linkability",
+    "threshold+biasedthreshold",
+    "biasedthreshold",
+    "threshold",
+]
 
 
 def read_ini(file_path: str, verbose=False) -> LocalConfig:
@@ -387,6 +392,39 @@ def get_dataset_stats_batch(dataset, nb_classes: int) -> list[int]:
         for target in target_batches:
             classes[target] += 1
     return classes
+
+
+def deserialized_model(weights, model, shapes, lens):
+    """
+    Convert received dict to state_dict.
+
+    Parameters
+    ----------
+    m : dict
+        received dict
+
+    Returns
+    -------
+    state_dict
+        state_dict of received
+
+    """
+    state_dict = dict()
+    start_index = 0
+    for i, key in enumerate(model.state_dict()):
+        end_index = start_index + lens[i]
+        state_dict[key] = torch.from_numpy(
+            weights[start_index:end_index].reshape(shapes[i])
+        )
+        start_index = end_index
+    return state_dict
+
+
+def load_model_from_path(model_path, model, shapes, lens, device=None):
+    model_weigths = np.load(model_path)
+    model.load_state_dict(deserialized_model(model_weigths, model, shapes, lens))
+    if device is not None:
+        model.to(device)
 
 
 def get_model_attributes(name, path):

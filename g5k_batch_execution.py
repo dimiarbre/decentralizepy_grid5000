@@ -82,12 +82,17 @@ def launch_experiment_wrapper(
     print(
         f"Launching {g5k_config} and config {decentralizepy_config}, debug={debug} and is_remote={is_remote}"
     )
-    _, duration = launch_experiment(
-        g5k_config=g5k_config,
-        decentralizepy_config=decentralizepy_config,
-        debug=debug,
-        is_remote=is_remote,
-    )
+    try:
+        _, duration = launch_experiment(
+            g5k_config=g5k_config,
+            decentralizepy_config=decentralizepy_config,
+            debug=debug,
+            is_remote=is_remote,
+        )
+    except Exception as e:
+        sys.stdout = sys.__stdout__
+        print(f"{name} got the following error:\n{e}\n{'-' * 20}")
+        raise e
     sys.stdout = sys.__stdout__
     os.remove(log_file_path)
     time_delta = datetime.timedelta(seconds=duration)
@@ -258,12 +263,18 @@ if __name__ == "__main__":
         # "model_class": ["CNN"],
         "model_class": ["MatrixFactorization"],  # For MovieLens
         #
-        "lr": ["lr0.05", "lr0.01", "lr0.10"],
+        # "lr": ["lr0.05", "lr0.01", "lr0.10"],
+        # "lr": ["lr0.05", "lr0.01", "lr0.10", "lr0.5", "lr0.075", "lr1.0"],
+        "lr": ["lr0.075"],
         # "lr": ["lr0.05"],
         #
-        "rounds": ["5rounds", "3rounds", "2rounds", "1rounds"],
+        # "batchsize":["batchsize64"],
+        "batchsize": ["batchsize512", "batchsize1024", "batchsize2048"],
+        #
+        # "rounds": ["5rounds", "3rounds", "2rounds", "1rounds"],
+        # "rounds": ["20rounds", "10rounds"],
         # "rounds": ["3rounds"],
-        # "rounds": ["1rounds"],
+        "rounds": ["1rounds"],
     }
     ARGS = parse_arguments()
     NB_WORKERS = ARGS.nb_workers

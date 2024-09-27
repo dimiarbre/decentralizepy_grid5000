@@ -98,6 +98,9 @@ def handle_special_parameters_values(
     elif parameter == "rounds":
         nb_rounds = int(parameter_value[:-6])
         config.set("TRAIN_PARAMS", "rounds", nb_rounds)
+    elif parameter == "batchsize":
+        batch_size = int(parameter_value[9:])
+        config.set("TRAIN_PARAMS", "batch_size", batch_size)
     else:
         return False
     return True

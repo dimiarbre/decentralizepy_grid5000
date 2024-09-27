@@ -1,5 +1,5 @@
 {
-    "job_name": "movielens_nonoise",
+    "job_name": "movielens_zerosum",
     "walltime": "0:30:00",
     "GRAPH_FILE": "100nodes_4regular.edges",
     "NB_AGENTS": 100,
@@ -9,7 +9,7 @@
     "TEST_AFTER" :50,
     "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",
     "LOG_LEVEL" : "INFO",
-    "CONFIG_NAME" : "config_movielens_sharing.ini",
+    "CONFIG_NAME" : "config_movielens_zerosum.ini",
     "cluster" : "paradoxe",
     "queue":"default",
     "STORAGE":"GROUP",

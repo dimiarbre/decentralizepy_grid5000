@@ -1,0 +1,17 @@
+{
+    "job_name": "movielens_muffliato",
+    "walltime": "0:30:00",
+    "GRAPH_FILE": "100nodes_4regular.edges",
+    "NB_AGENTS": 100,
+    "NB_MACHINE":2,
+    "NB_ITERATION" :10000,
+    "AVERAGING_STEPS" : 1,
+    "TEST_AFTER" :50,
+    "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",
+    "LOG_LEVEL" : "INFO",
+    "CONFIG_NAME" : "config_movielens_muffliato.ini",
+    "cluster" : "paradoxe",
+    "queue":"default",
+    "STORAGE":"GROUP",
+    "LOCAL_SAVE_DIR" : "results/my_results/test/testing_movielens_zsumexperiments/"
+}

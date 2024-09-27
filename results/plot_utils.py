@@ -3,7 +3,11 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import plot_loaders
 import seaborn as sns
+
+# Attributes that will always be needed to export for the pgfplots.
+EXPORT_ATTRIBUTES = ["noise_level_value", "log_noise", "variant"]
 
 ATTRIBUTE_DICT = {
     "network_size": ["128nodes"],
@@ -31,12 +35,26 @@ ATTRIBUTE_DICT = {
         "64th",
         "128th",
     ],
-    "lr": ["lr0.05", "lr0.01", "lr0.10"],
-    "local_rounds": ["1rounds", "3rounds"],
-    "batch_size": ["batch64"],
+    "lr": ["lr0.05", "lr0.01", "lr0.075", "lr0.10", "lr0.5"],
+    "local_rounds": [
+        "1rounds",
+        "2rounds",
+        "3rounds",
+        "5rounds",
+        "10rounds",
+        "20rounds",
+    ],
+    "batch_size": ["batchsize64", "batchsize512", "batchsize1024", "batchsize2048"],
     "seed": [f"seed{val}" for val in range(90, 106)],
     "model": ["LeNet", "CNN", "RNET"],
 }
+
+
+def extend_attributes_for_plot(attributes):
+    for bonus_attribute in EXPORT_ATTRIBUTES:
+        if bonus_attribute not in attributes:
+            attributes.append(bonus_attribute)
+    return attributes
 
 
 def percentile(n):
@@ -200,17 +218,16 @@ def plot_all_experiments(
     save_directory=None,
     orderings=None,
 ):
-    attributes_to_keep = select_attributes_to_keep(display_attributes, "iteration")
-    if "variant" not in attributes_to_keep:
-        attributes_to_keep.append("variant")
-    if "noise_level_value" not in attributes_to_keep:
-        attributes_to_keep.append("noise_level_value")
+    attributes_to_keep = plot_loaders.select_attributes_to_keep(
+        display_attributes, "iteration"
+    )
+    attributes_to_keep = extend_attributes_for_plot(attributes_to_keep)
     data_to_plot = pd.DataFrame({})
     for experiment in experiments:
         data_experiment = data[experiment][[column_name] + attributes_to_keep]
         data_experiment = data_experiment.dropna()
 
-        experiment_attributes = get_attributes(experiment)
+        experiment_attributes = plot_loaders.get_attributes(experiment)
         filename = f"{experiment_attributes['variant']}{experiment_attributes['noise_level']}_{experiment_attributes['avgsteps']}"
         data_experiment.to_csv(
             f"{save_directory}plot_data/entire_experiment_data/{filename}.csv"
@@ -218,16 +235,16 @@ def plot_all_experiments(
         data_to_plot = pd.concat([data_to_plot, data_experiment])
 
     sns.set_theme()
-    hue, hue_ordering = get_attributes_columns(
+    hue, hue_ordering = plot_loaders.get_attributes_columns(
         "hue", display_attributes, data_to_plot, orderings
     )
-    style, style_ordering = get_attributes_columns(
+    style, style_ordering = plot_loaders.get_attributes_columns(
         "style", display_attributes, data_to_plot, orderings
     )
-    size, size_ordering = get_attributes_columns(
+    size, size_ordering = plot_loaders.get_attributes_columns(
         "size", display_attributes, data_to_plot, orderings
     )
-    col, col_ordering = get_attributes_columns(
+    col, col_ordering = plot_loaders.get_attributes_columns(
         "col", display_attributes, data_to_plot, orderings
     )
 
@@ -248,7 +265,7 @@ def plot_all_experiments(
     )
     plot.figure.suptitle(plot_name)
     plot.figure.subplots_adjust(top=0.9)
-    is_unique = all_equals(
+    is_unique = plot_loaders.all_equals(
         [
             attribute_value
             for attribute, attribute_value in display_attributes.items()
@@ -288,7 +305,7 @@ def scatter_all_experiments(
     save_directory=None,
     orderings=None,
 ):
-    attributes_to_keep = select_attributes_to_keep(
+    attributes_to_keep = plot_loaders.select_attributes_to_keep(
         display_attributes=display_attributes, x_axis_name=x_axis_name
     )
     data_to_plot = pd.DataFrame({})
@@ -298,7 +315,7 @@ def scatter_all_experiments(
         data_to_plot = pd.concat([data_to_plot, data_experiment])
 
     sns.set_theme()
-    hue, hue_ordering = get_attributes_columns(
+    hue, hue_ordering = plot_loaders.get_attributes_columns(
         "hue", display_attributes, data_to_plot, orderings
     )
     # style, style_ordering = get_attributes_columns(
@@ -373,13 +390,12 @@ def scatter_averaged_experiments(
     true_x_axis = x_axis_name + " " + x_method
     true_y_axis = y_axis_name + " " + y_method
     data_to_plot = pd.DataFrame({})
-    attributes_to_keep = select_attributes_to_keep(display_attributes, x_axis_name)
+    attributes_to_keep = plot_loaders.select_attributes_to_keep(
+        display_attributes, x_axis_name
+    )
     top_acc_axis_name = x_axis_name + " mean to max " + y_axis_name
 
-    if "noise_level_value" not in attributes_to_keep:
-        attributes_to_keep.append("noise_level_value")
-    if "noise_level" not in attributes_to_keep:
-        attributes_to_keep.append("noise_level")
+    attributes_to_keep = extend_attributes_for_plot(attributes_to_keep)
     attributes_to_keep.remove(x_axis_name)
     for experiment in sorted(experiments):
         experiment_data = data[experiment]
@@ -424,13 +440,13 @@ def scatter_averaged_experiments(
     core_data = core_data[core_data["variant"] == "zerosum"]
 
     sns.set_theme()
-    hue, hue_ordering = get_attributes_columns(
+    hue, hue_ordering = plot_loaders.get_attributes_columns(
         "hue", display_attributes, data_to_plot, orderings
     )
-    style, style_ordering = get_attributes_columns(
+    style, style_ordering = plot_loaders.get_attributes_columns(
         "style", display_attributes, data_to_plot, orderings
     )
-    size, size_ordering = get_attributes_columns(
+    size, size_ordering = plot_loaders.get_attributes_columns(
         "size", display_attributes, data_to_plot, orderings
     )
     # col, col_ordering = get_attributes_columns(
@@ -599,25 +615,3 @@ def plot_communication(
         # print(f"Saving to {savefile}")
         # plt.savefig(savefile, bbox_inches=extent)
     return
-
-
-if __name__ == "__main__":
-    EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10"
-    paths_dict = get_full_path_dict(EXPERIMENT_DIR)
-    experiments_dict = get_experiments_dict(paths_dict.keys())
-    print(experiments_dict)
-    print(paths_dict)
-
-    attributes_list_to_check = [
-        {
-            "variant": "zerosum",
-            "additional_attribute": ["noselfnoise"],
-        },
-        {
-            "variant": "muffliato",
-            "avgsteps": "1avgsteps",
-        },
-    ]
-
-    res = filter_attribute_list(experiments_dict, attributes_list_to_check)
-    print(res)

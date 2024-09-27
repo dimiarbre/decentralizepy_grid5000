@@ -1,6 +1,6 @@
 {
-    "job_name": "testing_femnist",
-    "walltime": "1:30:00",
+    "job_name": "testing_movielens",
+    "walltime": "1:00:00",
     "GRAPH_FILE": "4_node_ring.edges",
     "NB_AGENTS": 4,
     "NB_MACHINE":1,
@@ -9,8 +9,8 @@
     "TEST_AFTER" :50,
     "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",
     "LOG_LEVEL" : "DEBUG",
-    "CONFIG_NAME" : "femnist_zerosum.ini",
-    "cluster" : "paravance",
+    "CONFIG_NAME" : "config_movielens_muffliato.ini",
+    "cluster" : "paradoxe",
     "queue":"default",
     "STORAGE":"GROUP",
     "LOCAL_SAVE_DIR" : "results/my_results/test/testing_femnist_zsumexperiments/"

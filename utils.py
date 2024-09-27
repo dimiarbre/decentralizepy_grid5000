@@ -134,6 +134,9 @@ baseconfig_mapping = {
     ("zerosum_noselfnoise", "femnistLabelSplit"): os.path.join(
         "run_configuration/femnist_labelsplit_zerosum_noselfnoise.ini"
     ),
+    ("nonoise", "movielens"): os.path.join(
+        "run_configuration/config_movielens_sharing.ini"
+    ),
 }
 
 noises_mapping = {

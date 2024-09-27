@@ -47,6 +47,8 @@ g5kconfig_mapping: dict[tuple[str, str], str] = {
     # ("zerosum_noselfnoise", "femnistLabelSplit"): os.path.join(
     #     "g5k_config/femnist_128nodes_zerosum_noselfnoise.json"
     # ),
+    ("nonoise", "movielens"): os.path.join("g5k_config/movielens_nonoise.json"),
+    # TODO: Add the rest of the configurations
 }
 
 toplogy_dynamicity_mapping: dict[str, str] = {
@@ -56,12 +58,16 @@ toplogy_dynamicity_mapping: dict[str, str] = {
 
 
 def space_estimator(nb_experiments, dataset):
+    # TODO: properly compute this with the parameters of the experiments
+    # As things stands, this estimator is very inacurate.
     if dataset == "femnist":
         experiment_estimation = 20
     elif dataset == "cifar":
         experiment_estimation = 1.8
     elif dataset == "femnistLabelSplit":
         experiment_estimation = 4  # For the quick fix of the experiments.
+    elif dataset == "movielens":
+        return 1  # Around 1GB for an experiment
     else:
         raise ValueError(f"Unknown dataset type {dataset}")
     return experiment_estimation * nb_experiments
@@ -172,7 +178,7 @@ def parse_arguments():
     parser.add_argument(
         "--dataset",
         type=str,
-        choices=["cifar", "femnist", "femnistLabelSplit"],
+        choices=["cifar", "femnist", "femnistLabelSplit", "movielens"],
         default="cifar",
         help="Dataset name or path",
     )
@@ -192,7 +198,8 @@ if __name__ == "__main__":
     possible_attributes = {
         # "nbnodes": ["256nodes"],
         # "nbnodes": ["128nodes"],
-        "nbnodes": ["64nodes"],
+        "nbnodes": ["100nodes"],
+        # "nbnodes": ["64nodes"],
         #
         # "variant": ["nonoise", "zerosum_selfnoise", "zerosum_noselfnoise"],
         # "variant": ["nonoise", "zerosum_selfnoise"],
@@ -243,18 +250,19 @@ if __name__ == "__main__":
         "random_seed": ["seed90"],
         #
         # "graph_degree": ["degree6"],
-        # "graph_degree": ["degree4"],
-        "graph_degree": ["degree5"],
+        "graph_degree": ["degree4"],
+        # "graph_degree": ["degree5"],
         #
         # "model_class": ["LeNet"],
-        "model_class": ["RNET"],
+        # "model_class": ["RNET"],
         # "model_class": ["CNN"],
+        "model_class": ["MatrixFactorization"],  # For MovieLens
         #
-        # "lr": ["lr0.05", "lr0.01", "lr0.10"],
-        "lr": ["lr0.05"],
+        "lr": ["lr0.05", "lr0.01", "lr0.10"],
+        # "lr": ["lr0.05"],
         #
-        # "rounds": ["5rounds", "3rounds", "2rounds", "1rounds"],
-        "rounds": ["3rounds"],
+        "rounds": ["5rounds", "3rounds", "2rounds", "1rounds"],
+        # "rounds": ["3rounds"],
         # "rounds": ["1rounds"],
     }
     ARGS = parse_arguments()

@@ -1,10 +1,10 @@
 {
-    "job_name": "testing_movielens",
-    "walltime": "1:00:00",
-    "GRAPH_FILE": "4_node_ring.edges",
-    "NB_AGENTS": 4,
-    "NB_MACHINE":1,
-    "NB_ITERATION" :100,
+    "job_name": "movielens_nonoise",
+    "walltime": "0:30:00",
+    "GRAPH_FILE": "100nodes_4regular.edges",
+    "NB_AGENTS": 100,
+    "NB_MACHINE":2,
+    "NB_ITERATION" :10000,
     "AVERAGING_STEPS" : 1,
     "TEST_AFTER" :50,
     "EVAL_FILE" :"testingPeerSamplerMultipleAvgRounds.py",
@@ -13,5 +13,5 @@
     "cluster" : "paradoxe",
     "queue":"default",
     "STORAGE":"GROUP",
-    "LOCAL_SAVE_DIR" : "results/my_results/test/testing_femnist_zsumexperiments/"
+    "LOCAL_SAVE_DIR" : "results/my_results/test/testing_movielens_zsumexperiments/"
 }

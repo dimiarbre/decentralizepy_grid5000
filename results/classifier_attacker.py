@@ -166,6 +166,7 @@ def train_classifier(
         model.train()
 
         running_loss = 0.0
+        num_batches = 0
         for i, (inputs, labels) in enumerate(dataset):
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -174,8 +175,11 @@ def train_classifier(
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-        train_losses.append(running_loss)
-    print(f"Finished training. Running loss on last iteration: {running_loss}")
+            num_batches += 1
+        # Normalize the loss by the number of batches
+        average_loss = running_loss / num_batches if num_batches > 0 else 0
+        train_losses.append(average_loss)
+    print(f"Finished training. Running loss on last iteration: {average_loss}")
     return train_losses
 
 
@@ -191,9 +195,9 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
     false_positives = [0, 0]  # False positives for each class
     false_negatives = [0, 0]  # False negatives for each class
 
-    y_true = torch.tensor([], dtype=torch.int32, device=device)
-    y_pred = torch.tensor([], dtype=torch.int32, device=device)
-    y_proba = torch.tensor([], dtype=torch.int32, device=device)
+    y_true = torch.tensor([], dtype=torch.long, device=device)
+    y_pred = torch.tensor([], dtype=torch.long, device=device)
+    y_proba = torch.tensor([], dtype=torch.float32, device=device)
 
     with torch.no_grad():
         loss_val = 0.0
@@ -209,7 +213,7 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
             _, predictions = torch.max(outputs, 1)
 
             # TODO: may need to switch to class 0. Depends on "generate_y_data"
-            probabilities = probabilities = F.softmax(outputs, dim=1)[:, 1]
+            probabilities = F.softmax(outputs, dim=1)[:, 1]
 
             y_true = torch.cat([y_true, labels])
             y_pred = torch.cat([y_pred, predictions])
@@ -224,7 +228,7 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
                 else:
                     false_positives[prediction] += 1
                     false_negatives[label] += 1
-                total_pred[label] += 1
+                total_pred[prediction] += 1
                 total_predicted += 1
 
     accuracy = total_correct / total_predicted * 100
@@ -240,7 +244,7 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
             recall[i] = correct_pred[i] / (correct_pred[i] + false_negatives[i])
 
     print(
-        f"Test loss: {loss_val}; test accuracy: {accuracy:.2f}%. Predictions: {total_pred}"
+        f"Test loss: {loss_val/count}; test accuracy: {accuracy:.2f}%. Predictions: {total_pred}"
     )
     print(
         f"Precision for class 0: {precision[0]*100:.2f}%, class 1: {precision[1]*100:.2f}%"
@@ -250,7 +254,7 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
     conf_matrix = confusion_matrix(y_true.cpu(), y_pred.cpu(), normalize="true")
 
     return (
-        loss_val,
+        loss_val / count,
         accuracy,
         precision,
         recall,
@@ -595,7 +599,7 @@ def sample_specific_scores(
     for target_fpr in fpr_to_consider:
         if target_fpr < fpr[1]:
             # fpr[0] is always 0.
-            # We remove data point corresponding to nothing.
+            # We remove data point corresponding to no data point.
             # TODO: ensure I really want to keep this code fragment.
             sampled_tpr[target_fpr] = torch.nan
             continue

@@ -506,7 +506,7 @@ def classifier_attack(
     return res, train_losses
 
 
-def generate_statistics(
+def generate_statistics_figure(
     experiment_name,
     experiment_dir,
     train_losses,
@@ -575,6 +575,39 @@ def generate_statistics(
     return
 
 
+def sample_specific_scores(
+    tpr: np.ndarray, fpr: np.ndarray, fpr_to_consider: list[float]
+):
+    """
+    Returns the true positive rates (tpr) corresponding to specific
+    false positive rates (fpr_to_consider), by finding the closest values in the given fpr list.
+
+    Args:
+        tpr (np.ndarray): True positive rates.
+        fpr (np.ndarray): False positive rates (same length as tpr).
+        fpr_to_consider (list of float): False positive rates at which to sample the tpr.
+
+    Returns:
+        dictionnary of floats: The tpr values corresponding to the closest fpr values.
+    """
+    sampled_tpr = {}
+
+    for target_fpr in fpr_to_consider:
+        if target_fpr < fpr[1]:
+            # fpr[0] is always 0.
+            # We remove data point corresponding to nothing.
+            # TODO: ensure I really want to keep this code fragment.
+            sampled_tpr[target_fpr] = torch.nan
+            continue
+
+        # Find the index of the closest fpr value in the original fpr list
+        closest_idx = np.argmin(np.abs(fpr - target_fpr))
+
+        sampled_tpr[target_fpr] = tpr[closest_idx]
+
+    return sampled_tpr
+
+
 def run_classifier_attack(
     models_properties: pd.DataFrame,
     experiment_dir,
@@ -637,9 +670,17 @@ def run_classifier_attack(
 
         y_true, y_proba = y_true.cpu(), y_proba.cpu()
         roc_auc = roc_auc_score(y_true=y_true, y_score=y_proba)
+        fpr, tpr, _ = roc_curve(y_true, y_proba)
+
+        # TODO: make this a global variable?
+        fpr_to_consider = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+
+        scores = sample_specific_scores(
+            tpr=tpr, fpr=fpr, fpr_to_consider=fpr_to_consider
+        )
 
         # Generate visualization plots.
-        generate_statistics(
+        generate_statistics_figure(
             experiment_name=experiment_name,
             experiment_dir=experiment_dir,
             train_losses=train_losses,
@@ -657,6 +698,9 @@ def run_classifier_attack(
         current_res["roc_auc"] = [roc_auc]
         current_res["target"] = [target]
         current_res["attacker_model"] = [attacker_model_initializer.__name__]
+
+        for fpr_target, tpr_value in scores.items():
+            current_res[f"tpr_at_fpr{fpr_target}"] = tpr_value
 
         df_current_res = pd.DataFrame(current_res)
         df_current_res.set_index("agent")

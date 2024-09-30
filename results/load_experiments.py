@@ -12,8 +12,9 @@ import pandas as pd
 import torch
 import torchvision
 from localconfig import LocalConfig
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
+import decentralizepy.datasets.MovieLens
 from decentralizepy.datasets.CIFAR10 import LeNet
 from decentralizepy.datasets.Data import Data
 from decentralizepy.datasets.Femnist import CNN, RNET, Femnist
@@ -137,10 +138,11 @@ def femnist_read_dir(data_dir) -> tuple[list, list, dict]:
     return clients, num_samples, data
 
 
-class FemnistPartitionerWrapper(DataPartitioner):
+class PartitionerWrapper(DataPartitioner):
     """
-    This class is a wrapper of the Femnist Datapartitioner that is there to match the CIFAR10 syntax.
+    This class is a wrapper of a Datapartitioner that is there to match the CIFAR10 syntax.
     It is basically a list, with a .use() method that is the same as .__get__()
+    It will be used for cases where partition is done intrinsically to the dataset.
     """
 
     def __init__(self, data, sizes=None, seed=1234):
@@ -250,7 +252,7 @@ def load_Femnist(
 
     testset = load_Femnist_Testset(femnist_test_dir=femnist_test_dir)
 
-    return FemnistPartitionerWrapper(all_trainsets, [], 0), testset
+    return PartitionerWrapper(all_trainsets, [], 0), testset
 
 
 def load_Femnist_labelsplit(
@@ -290,7 +292,53 @@ def load_Femnist_labelsplit(
 
     testset = load_Femnist_Testset(femnist_test_dir=femnist_test_dir)
 
-    return FemnistPartitionerWrapper(all_data), testset
+    return PartitionerWrapper(all_data), testset
+
+
+def load_movielens(
+    nb_nodes, sizes, random_seed, debug=False
+) -> tuple[DataPartitioner, Data]:
+    users_count, _, df_train, df_test = decentralizepy.datasets.MovieLens.load_data(
+        train_dir="datasets/MovieLens/",
+        random_seed=random_seed,
+    )
+    local_train_datasets = []
+    local_test_datasets_x = []
+    local_test_datasets_y = []
+    for i in range(nb_nodes):
+        local_train_data, local_test_data = (
+            decentralizepy.datasets.MovieLens.split_data(
+                df_train,
+                df_test,
+                n_users=users_count,
+                world_size=nb_nodes,
+                dataset_id=i,
+            )
+        )
+        local_train_x = local_train_data[["user_id", "item_id"]].to_numpy()
+        local_train_y = local_train_data.rating.values.astype("float32")
+        local_test_x = local_test_data[["user_id", "item_id"]].to_numpy()
+        local_test_y = local_test_data.rating.values
+
+        local_train_datasets.append(Data(local_train_x, local_train_y))
+        local_test_datasets_x.append(local_test_x)
+        local_test_datasets_y.append(local_test_y)
+
+    # Agregate the test dataset ?
+    # TODO: ensure we want to do this
+    global_test_dataset_x = np.concatenate(local_test_datasets_x)
+    global_test_dataset_y = np.concatenate(local_test_datasets_y)
+
+    global_test_dataset = Data(global_test_dataset_x, global_test_dataset_y)
+    # global_test_dataset = ConcatDataset(local_test_datasets)
+
+    if debug:
+        print(
+            f"Generated {nb_nodes} trainsets. Dataset sizes: {[len(local_trainset) for local_trainset in local_train_datasets]}"
+        )
+        # print(f"Shape of test data: {global_test_dataset.cumulative_sizes}") # Cannot use this if it is not a ConcatDataset
+        print(f"Shape of test data: {global_test_dataset}")
+    return PartitionerWrapper(local_train_datasets), global_test_dataset
 
 
 POSSIBLE_DATASETS = {
@@ -306,6 +354,10 @@ POSSIBLE_DATASETS = {
         load_Femnist_labelsplit,
         62,
     ),
+    "MovieLens": (
+        load_movielens,
+        10,
+    ),
 }
 
 POSSIBLE_MODELS = {
@@ -319,7 +371,7 @@ def load_dataset_partitioner(
     dataset_name: str,
     total_agents: int,
     seed: int,
-    shards: int | None,
+    shards: Optional[int],
     sizes: Optional[list[float]] = None,
     debug=False,
 ) -> tuple[DataPartitioner, Data]:
@@ -363,6 +415,11 @@ def load_dataset_partitioner(
             debug=debug,
         )
         return all_trainsets, testset
+    elif dataset_name == "MovieLens":
+        all_trainsets, testset = load_movielens(
+            nb_nodes=total_agents, sizes=sizes, random_seed=seed, debug=debug
+        )
+        return all_trainsets, testset
     if shards is None:
         raise ValueError(
             f"Got shards as None for {dataset_name} when only Femnist should be the case of None Shards."
@@ -396,12 +453,15 @@ def get_dataset_stats(dataset, nb_classes: int, dataset_name: Optional[str]):
     Args:
         dataset (decentralizepy.datasets.Partition): A dataset partition for a local agent
         nb_classes (int): The number of classes for the dataset
+        dataset_name (Optinal str): The name of the dataset. Used for MovieLens, that has a pecculiar class repartition.
 
     Returns:
         int array: An array of size nb_classes corresponding to the number of element for each class
     """
     classes = [0 for _ in range(nb_classes)]
     for _, target in dataset:
+        if dataset_name is not None and dataset_name == "MovieLens":
+            target = int(2 * target) - 1
         classes[target] += 1
     return classes
 
@@ -633,30 +693,32 @@ def get_all_experiments_properties(
 
 
 def main():
-    DATASET = "Femnist"
+    DATASET = "MovieLens"
     NB_CLASSES = POSSIBLE_DATASETS[DATASET][1]
-    NB_AGENTS = 128
-    NB_MACHINES = 8
+    NB_AGENTS = 100
+    NB_MACHINES = 2
     train_partitioner, test_data = load_dataset_partitioner(
         DATASET, NB_AGENTS, 90, 2, debug=True
     )
     nb_data = 0
     for agent in range(NB_AGENTS):
         train_data_current_agent = train_partitioner.use(agent)
-        agent_classes_trainset = get_dataset_stats(train_data_current_agent, NB_CLASSES)
+        agent_classes_trainset = get_dataset_stats(
+            train_data_current_agent, NB_CLASSES, dataset_name=DATASET
+        )
         print(f"Classes for agent {agent}: {agent_classes_trainset}")
         nb_data_agent = sum(agent_classes_trainset)
         print(f"Total number of data for agent {agent}: {nb_data_agent}")
         nb_data += nb_data_agent
     print(f"Total data for the {DATASET} dataset: {nb_data}")
-    EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10/2067277_nonoise_dynamic_128nodes_1avgsteps_batch32_lr0.05_3rounds"
+    EXPERIMENT_DIR = "results/my_results/movielens/2456067_movielens_nonoise_100nodes_1avgsteps_static"
 
     all_models_df = get_all_models_properties(
-        EXPERIMENT_DIR, NB_AGENTS, NB_MACHINES, ALL_ATTACKS
+        EXPERIMENT_DIR, NB_AGENTS, NB_MACHINES, ["threshold"]
     )
     print(all_models_df)
 
-    EXPERIMENTS_DIR = "results/my_results/test/testing_femnist_convergence_rates"
+    EXPERIMENTS_DIR = "results/my_results/movielens/"
 
     t0 = time.time()
     all_experiments_df = get_all_experiments_properties(

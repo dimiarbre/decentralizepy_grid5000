@@ -27,6 +27,12 @@ def save_results(
         command = f"rsync -Crvz --exclude '**/graphs/*' --exclude '*.log' {remote_logs_dir}/* {remote_result_dir}/"
         # Do not back up the graphs unless absolutely necessary (they are here for debugging purposes)
         result = en.run_command(command, roles=roles["head"])
+
+        # Save only one log file just for safety.
+        command = (
+            f"rsync -Crvz {remote_logs_dir}/machine*/0.log {remote_result_dir}/0.log"
+        )
+        result = en.run_command(command, roles=roles["head"])
         synchro_command = f'rsync -Crvz --exclude "**/graphs/*" --exclude "ip.json" --exclude "*.ini" --exclude "*.log"  {remote_logs_dir}/* {remote_result_dir}/'
     else:
         result = en.run_command(

@@ -1,8 +1,3 @@
-import logging
-import os
-
-import load_experiments
-import pandas as pd
 import torch
 
 
@@ -18,7 +13,7 @@ class LinkabilityAttack:
         client_datasets,
         loss,
         eval_batch_size=16,
-        device: str | torch.device = "cpu",
+        device: torch.device = torch.device("cpu"),
     ) -> None:
         self.num_clients = num_clients
         self.client_datasets = client_datasets

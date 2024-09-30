@@ -25,6 +25,7 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 
+# TODO: replace this with the Data class? This seems to be essentially the same.
 class ConcatWithLabels(Dataset):
     """Data class that will consider concatenated datasets, and add as post processing.
 

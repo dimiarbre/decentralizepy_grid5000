@@ -389,7 +389,7 @@ def load_dataset_partitioner(
     return partitioner, testset
 
 
-def get_dataset_stats(dataset, nb_classes: int):
+def get_dataset_stats(dataset, nb_classes: int, dataset_name: Optional[str]):
     """Logs the data repartition for all classes of a dataset
 
 

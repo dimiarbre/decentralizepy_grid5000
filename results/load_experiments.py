@@ -298,6 +298,8 @@ def load_Femnist_labelsplit(
 def load_movielens(
     nb_nodes, sizes, random_seed, debug=False
 ) -> tuple[DataPartitioner, Data]:
+    if random_seed is None:
+        random_seed = 1234  # To match with the code's default value
     users_count, _, df_train, df_test = decentralizepy.datasets.MovieLens.load_data(
         train_dir="datasets/MovieLens/",
         random_seed=random_seed,
@@ -698,7 +700,7 @@ def main():
     NB_AGENTS = 100
     NB_MACHINES = 2
     train_partitioner, test_data = load_dataset_partitioner(
-        DATASET, NB_AGENTS, 90, 2, debug=True
+        DATASET, NB_AGENTS, seed=1234, shards=2, debug=True
     )
     nb_data = 0
     for agent in range(NB_AGENTS):

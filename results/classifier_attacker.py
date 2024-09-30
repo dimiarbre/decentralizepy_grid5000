@@ -32,7 +32,11 @@ class ConcatWithLabels(Dataset):
         torch (_type_): _description_
     """
 
-    def __init__(self, x_train, y_train):
+    def __init__(
+        self,
+        x_train: torch.utils.data.ConcatDataset,
+        y_train: torch.Tensor,
+    ):
         self.x_train = x_train
         self.y_train = y_train
 
@@ -43,6 +47,16 @@ class ConcatWithLabels(Dataset):
         x = self.x_train[idx]
         y = self.y_train[idx]
         return x, y
+
+
+def fast_collate(batch):
+    """
+    Optimized collate function to concatenate tensor batches.
+    Assuming all samples in `batch` are already torch tensors.
+    """
+    x_batch = torch.stack([item[0] for item in batch])  # Stack all data samples
+    y_batch = torch.stack([item[1] for item in batch])  # Stack all label samples
+    return x_batch, y_batch
 
 
 class SimpleAttacker(nn.Module):
@@ -154,7 +168,6 @@ def train_classifier(
         running_loss = 0.0
         for i, (inputs, labels) in enumerate(dataset):
             inputs, labels = inputs.to(device), labels.to(device)
-            # Add channel dimension, now shape becomes [batch_size, 1, sequence_length]
             optimizer.zero_grad()
             outputs = model(inputs)
             loss = loss_function(outputs, labels)
@@ -387,6 +400,8 @@ def generate_attacker_dataset(
         shuffle=True,
         num_workers=0,
         batch_size=batch_size,
+        pin_memory=True,
+        collate_fn=fast_collate,
     )
 
     x_test = torch.utils.data.ConcatDataset((trainset_for_test, testset_for_test))
@@ -396,6 +411,8 @@ def generate_attacker_dataset(
         shuffle=True,
         num_workers=0,
         batch_size=batch_size,
+        pin_memory=True,
+        collate_fn=fast_collate,
     )
 
     return dataloader_train, dataloader_test, weight
@@ -585,11 +602,13 @@ def run_classifier_attack(
         # Or revamp how models are logged (which is already a todo)
         assert (targets[0] == targets).all(), f"Not uniform targets {targets}"
         target = targets[0]
-        trainset = trainset_partitioner.use(agent)
-        trainset = DataLoader(trainset, batch_size=batch_size, shuffle=False)
+        trainset_local_node = trainset_partitioner.use(agent)
+        trainset_local_node = DataLoader(
+            trainset_local_node, batch_size=batch_size, shuffle=False
+        )
         current_res, train_losses = classifier_attack(
             agent_model_properties,
-            trainset=trainset,
+            trainset=trainset_local_node,
             testset=testset,
             loss_function=loss_function,
             attacked_model=attacked_model,
@@ -669,8 +688,7 @@ def main(dataset_name="CIFAR10"):
         nb_machines = 4
         seed = 90
         kshards = 2
-        size_train = 200  # Downscaled for testing purposes: impossible to do for CIFAR split accross 128 nodes.
-        batch_size = 16
+        batch_size = 512
         experiment_dir = "results/my_results/test/fixing_attacks/cifar/4849292_cifar_nonoise_128nodes_1avgsteps_static_seed90_degree6_LeNet_lr0.05_3rounds"
         attacked_model = load_experiments.LeNet()
 

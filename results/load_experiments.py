@@ -12,12 +12,14 @@ import pandas as pd
 import torch
 import torchvision
 from localconfig import LocalConfig
+from torch.nn import CrossEntropyLoss, MSELoss
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 import decentralizepy.datasets.MovieLens
 from decentralizepy.datasets.CIFAR10 import LeNet
 from decentralizepy.datasets.Data import Data
 from decentralizepy.datasets.Femnist import CNN, RNET, Femnist
+from decentralizepy.datasets.MovieLens import MatrixFactorization
 from decentralizepy.datasets.Partitioner import (
     DataPartitioner,
     KShardDataPartitioner,
@@ -366,6 +368,12 @@ POSSIBLE_MODELS = {
     "RNET": RNET,
     "LeNet": LeNet,
     "CNN": CNN,
+"MatrixFactorization": MatrixFactorization,
+}
+
+POSSIBLE_LOSSES: dict[str, type[torch.nn.Module]] = {
+    "CrossEntropyLoss": CrossEntropyLoss,
+    "MSELoss": MSELoss,
 }
 
 
@@ -532,12 +540,18 @@ def generate_shapes(model: torch.nn.Module) -> tuple[list[tuple[int, int]], list
 def generate_losses(
     model: torch.nn.Module,
     dataset,
-    loss_function=torch.nn.CrossEntropyLoss(
+    loss_function: torch.nn.Module = torch.nn.CrossEntropyLoss(
         reduction="none"
     ),  # We want each individual losses.
     device=torch.device("cpu"),
     debug=False,
 ):
+assert (
+        loss_function.reduction == "none"
+    ), "Reduction should be none to generate all arguments"
+    is_mse = isinstance(
+        loss_function, MSELoss
+    )  # We can't compute some metrics in this case
     losses = torch.tensor([])
     classes = torch.tensor([])
     # Fixes inconsistent batch size
@@ -553,6 +567,7 @@ def generate_losses(
             loss = loss_function(y_pred, y)
             loss = loss.to("cpu")
             losses = torch.cat([losses, loss])
+if not is_mse:
             y_cpu = y.to("cpu")
             classes = torch.cat([y_cpu, classes])
             _, predictions = torch.max(y_pred, 1)
@@ -560,8 +575,13 @@ def generate_losses(
                 if label == prediction:
                     total_correct += 1
                 total_predicted += 1
+if losses.dtype == torch.float64:
+        losses.float()
+    if not is_mse:
     accuracy = total_correct / total_predicted
     return (losses, classes, accuracy)
+else:
+        return (losses, None, None)
 
 
 def filter_nans(losses: torch.Tensor, classes, debug_name, loss_type):

@@ -23,6 +23,7 @@ from LinkabilityAttack import LinkabilityAttack
 from load_experiments import (
     ALL_ATTACKS,
     POSSIBLE_DATASETS,
+    POSSIBLE_LOSSES,
     POSSIBLE_MODELS,
     error_catching_wrapper,
 )
@@ -90,7 +91,6 @@ def attack_experiment(
     experiment_path: str,
     device_type: str = "cpu",
     attack_todo="threshold",
-    loss_initializer=torch.nn.CrossEntropyLoss,
     debug=False,
 ):
     # Load this experiment's configuration file
@@ -102,7 +102,7 @@ def attack_experiment(
     nb_classes = POSSIBLE_DATASETS[dataset][1]
 
     seed = load_experiments.safe_load_int(config, "DATASET", "random_seed")
-    if dataset in ["Femnist", "FemnistLabelSplit"]:
+    if dataset in ["Femnist", "FemnistLabelSplit", "MovieLens"]:
         kshards = None
 
     else:
@@ -110,6 +110,10 @@ def attack_experiment(
 
     model_name = config.dataset.model_class
     target_model_initializer = POSSIBLE_MODELS[model_name]
+
+    simulation_loss_name = config.train_params.loss_class
+    simulation_loss_initializer = POSSIBLE_LOSSES[simulation_loss_name]
+    simulation_loss_function = simulation_loss_initializer(reduction="none")
 
     assert attack_todo in [
         "threshold",
@@ -183,7 +187,7 @@ def attack_experiment(
             client_datasets=trainset_partitioner,
             # For linkability attack, we only look at aggregated loss, so we want reduction.
             # Hence, no 'reduction="none" parameter.'
-            loss=loss_initializer(),
+            loss=simulation_loss_initializer(),
             eval_batch_size=batch_size,
             device=device,
         )
@@ -195,7 +199,7 @@ def attack_experiment(
             experiment_dir=experiment_path,
             trainset_partitioner=trainset_partitioner,
             testset=testset,
-            loss_function=loss_initializer(reduction="none"),
+            simulation_loss_function=simulation_loss_function,
             attacked_model=running_model,
             shapes_target=shapes,
             lens_target=lens,
@@ -303,6 +307,7 @@ def attack_experiment(
                     device=device,
                     debug=debug,
                     debug_name=experiment_name,
+                    loss_training=simulation_loss_function,
                     attack=attack_todo,
                     plotter_unbalanced=roc_plotter_unbalanced,
                     plotter_balanced=roc_plotter_balanced,

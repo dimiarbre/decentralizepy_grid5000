@@ -126,6 +126,7 @@ def run_threshold_attack(
     debug=False,
     debug_name="",
     attack="threshold",
+    loss_training: torch.nn.Module = torch.nn.CrossEntropyLoss(reduction="none"),
     plotter_unbalanced: Optional[RocPlotter] = None,
     plotter_balanced: Optional[RocPlotter] = None,
     classes_plotters: list[RocPlotter] = [],
@@ -154,7 +155,7 @@ def run_threshold_attack(
         device=device,
     )
     losses_train, classes_train, acc_train = load_experiments.generate_losses(
-        running_model, trainset, device=device, debug=debug
+        running_model, trainset, device=device, loss_function=loss_training, debug=debug
     )
     # Remove nans, usefull for RESNET + FEMNIST at least.
     losses_train, classes_train = load_experiments.filter_nans(
@@ -166,7 +167,7 @@ def run_threshold_attack(
 
     # Generate the test losses
     losses_test, classes_test, acc_test = load_experiments.generate_losses(
-        running_model, testset, device=device, debug=debug
+        running_model, testset, device=device, loss_function=loss_training, debug=debug
     )
     # Remove nans, usefull for RESNET + FEMNIST at least.
     losses_test, classes_test = load_experiments.filter_nans(

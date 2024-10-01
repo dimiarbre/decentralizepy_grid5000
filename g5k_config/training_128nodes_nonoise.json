@@ -13,6 +13,6 @@
     "cluster" : "grvingt",
     "queue":"production",
     "STORAGE":"GROUP",
-    "LOCAL_SAVE_DIR": "results/my_results/icml_experiments/additional_cifar10",
+    "LOCAL_SAVE_DIR": "attacks/my_results/icml_experiments/additional_cifar10",
     "DOWNLOAD_ALL": "False"
 }

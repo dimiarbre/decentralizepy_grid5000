@@ -10,5 +10,5 @@
     "LOG_LEVEL" :"INFO",
     "CONFIG_NAME" :"only_training_gaussiannoise.ini",
     "cluster" : "paravance",
-    "LOCAL_SAVE_DIR" : "results/my_results/"
+    "LOCAL_SAVE_DIR" : "attacks/my_results/"
 }

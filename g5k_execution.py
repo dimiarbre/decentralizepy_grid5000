@@ -217,9 +217,9 @@ def launch_experiment(g5k_config, decentralizepy_config, debug, is_remote):
     run_folder_name = f"{job_id}_{true_job_name}"
     # We need the job id for this section to work, thus we must alreay have the reservation
     if storage_location == "GROUP":
-        remote_result_dir = REMOTE_GROUP_STORAGE + f"/results/{run_folder_name}"
+        remote_result_dir = REMOTE_GROUP_STORAGE + f"/attacks/{run_folder_name}"
     else:
-        remote_result_dir = REMOTE_SCRATCH_DIR + f"/results/{run_folder_name}"
+        remote_result_dir = REMOTE_SCRATCH_DIR + f"/attacks/{run_folder_name}"
     print(remote_result_dir)
     singularity_version = en.run_command(f"{SINGULARITY} --version", roles=roles)
 

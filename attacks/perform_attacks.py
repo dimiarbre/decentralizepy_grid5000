@@ -423,8 +423,8 @@ def main(
     # ---------
     print("---- Starting main attacks ----")
 
-    # experiments_dir = "results/my_results/icml_experiments/cifar10/"
-    # experiments_dir = "results/my_results/icml_experiments/additional_cifar10/"
+    # experiments_dir = "attacks/my_results/icml_experiments/cifar10/"
+    # experiments_dir = "attacks/my_results/icml_experiments/additional_cifar10/"
 
     print("Loading experiments dirs")
     all_experiments_df = load_experiments.get_all_experiments_properties(
@@ -436,7 +436,7 @@ def main(
     # all_experiments_df = pd.read_csv("experiments_df.csv")
 
     # Use this we want to reduce the size of the experiments to consider for quick results
-    # results_path = "results/my_results/icml_experiments/cifar10_attack_results_quick/"
+    # results_path = "attacks/my_results/icml_experiments/cifar10_attack_results_quick/"
     # all_experiments_df = all_experiments_df[
     #     all_experiments_df["iteration"].isin([500, 5000, 10000])
     # ]
@@ -504,7 +504,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "experiment_dir",
         type=str,
-        default="results/my_results/test/testing_femnist_convergence_rates/",
+        default="attacks/my_results/test/testing_femnist_convergence_rates/",
         help="Path to the experiment directory",
     )
 

@@ -25,3 +25,4 @@ organisation_notes/.obsidian/graph.json
 venv-**/**
 datasets/
 results/datasets
+.pixi

@@ -10,6 +10,6 @@
     "LOG_LEVEL" :"INFO",
     "CONFIG_NAME" :"mia_config_cifar10_muffliato.ini",
     "cluster" : "paravance",
-    "LOCAL_SAVE_DIR" : "results/my_results/128nodes_avgsteps/",
+    "LOCAL_SAVE_DIR" : "attacks/my_results/128nodes_avgsteps/",
     "AVERAGING_STEPS" : 10
 }

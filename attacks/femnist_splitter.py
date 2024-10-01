@@ -120,9 +120,9 @@ def get_class_stats(data):
 
 def main(nb_shards):
     data_dir = (
-        "results/datasets/Femnist_labelsplit/femnist/per_user_data/per_user_data/train/"
+        "attacks/datasets/Femnist_labelsplit/femnist/per_user_data/per_user_data/train/"
     )
-    result_dir = f"results/datasets/Femnist_labelsplit/femnist/data/train/{NB_NODES}nodes_{nb_shards}shards/"
+    result_dir = f"attacks/datasets/Femnist_labelsplit/femnist/data/train/{NB_NODES}nodes_{nb_shards}shards/"
     assert os.path.exists(
         data_dir
     ), f"{data_dir} does not exist! Are you sure you are in the correct directory?"

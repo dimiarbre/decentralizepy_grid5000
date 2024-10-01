@@ -187,7 +187,9 @@ def train_classifier(
     return train_losses
 
 
-def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.device,debug:bool = False):
+def eval_classifier(
+    model: nn.Module, testloader: DataLoader, device: torch.device, debug: bool = False
+):
     model.to(device)
     loss_function = nn.CrossEntropyLoss()
     total_correct = 0
@@ -254,7 +256,9 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
         print(
             f"Precision for class 0: {precision[0]*100:.2f}%, class 1: {precision[1]*100:.2f}%"
         )
-        print(f"Recall for class 0: {recall[0]*100:.2f}%, class 1: {recall[1]*100:.2f}%")
+        print(
+            f"Recall for class 0: {recall[0]*100:.2f}%, class 1: {recall[1]*100:.2f}%"
+        )
 
     conf_matrix = confusion_matrix(y_true.cpu(), y_pred.cpu(), normalize="true")
 
@@ -513,7 +517,7 @@ def classifier_attack(
     print(
         f"Training {nb_epoch} epochs took {(t1-t0)/60:.2f}min. Speed: {nb_epoch/(t1-t0):.2f}it/s"
     )
-    res = eval_classifier(attacker_model, attacker_testset, device=device,debug=debug)
+    res = eval_classifier(attacker_model, attacker_testset, device=device, debug=debug)
     return res, train_losses
 
 
@@ -744,7 +748,7 @@ def main(dataset_name="CIFAR10"):
         seed = 90
         kshards = 2
         batch_size = 512
-        experiment_dir = "results/my_results/test/fixing_attacks/cifar/4849292_cifar_nonoise_128nodes_1avgsteps_static_seed90_degree6_LeNet_lr0.05_3rounds"
+        experiment_dir = "attacks/my_results/test/fixing_attacks/cifar/4849292_cifar_nonoise_128nodes_1avgsteps_static_seed90_degree6_LeNet_lr0.05_3rounds"
         attacked_model = load_experiments.LeNet()
 
     # FemnistLabelSplit test experiment.
@@ -753,9 +757,9 @@ def main(dataset_name="CIFAR10"):
         nb_machines = 2
         seed = 90
         kshards = None
-        # experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4860405_femnistLabelSplit_nonoise_64nodes_1avgsteps_static_seed90_degree4_RNET_lr0.01_3rounds"
-        # experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4862162_femnistLabelSplit_zerosum_selfnoise_64nodes_1avgsteps_16th_static_seed90_degree4_RNET_lr0.01_3rounds"
-        experiment_dir = "results/my_results/test/fixing_attacks/femnist_labelsplit/4861560_femnistLabelSplit_muffliato_64nodes_5avgsteps_16th_static_seed90_degree4_RNET_lr0.01_3rounds"
+        # experiment_dir = "attacks/my_results/test/fixing_attacks/femnist_labelsplit/4860405_femnistLabelSplit_nonoise_64nodes_1avgsteps_static_seed90_degree4_RNET_lr0.01_3rounds"
+        # experiment_dir = "attacks/my_results/test/fixing_attacks/femnist_labelsplit/4862162_femnistLabelSplit_zerosum_selfnoise_64nodes_1avgsteps_16th_static_seed90_degree4_RNET_lr0.01_3rounds"
+        experiment_dir = "attacks/my_results/test/fixing_attacks/femnist_labelsplit/4861560_femnistLabelSplit_muffliato_64nodes_5avgsteps_16th_static_seed90_degree4_RNET_lr0.01_3rounds"
         attacked_model = load_experiments.RNET()
 
     else:

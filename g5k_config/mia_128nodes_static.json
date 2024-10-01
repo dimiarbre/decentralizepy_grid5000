@@ -10,5 +10,5 @@
     "LOG_LEVEL" :"INFO",
     "CONFIG_NAME" :"mia_config_cifar10.ini",
     "cluster" : "paravance",
-    "LOCAL_SAVE_DIR" : "results/my_results/"
+    "LOCAL_SAVE_DIR" : "attacks/my_results/"
 }

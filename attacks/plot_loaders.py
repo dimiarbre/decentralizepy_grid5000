@@ -493,7 +493,7 @@ def format_data(
 
 
 if __name__ == "__main__":
-    EXPERIMENT_DIR = "results/my_results/icml_experiments/cifar10"
+    EXPERIMENT_DIR = "attacks/my_results/icml_experiments/cifar10"
     paths_dict = get_full_path_dict(EXPERIMENT_DIR)
     experiments_dict = get_experiments_dict(paths_dict.keys())
     print(experiments_dict)

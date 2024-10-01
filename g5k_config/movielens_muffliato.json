@@ -13,5 +13,5 @@
     "cluster" : "paradoxe",
     "queue":"default",
     "STORAGE":"GROUP",
-    "LOCAL_SAVE_DIR" : "results/my_results/test/testing_movielens_zsumexperiments/"
+    "LOCAL_SAVE_DIR" : "attacks/my_results/test/testing_movielens_zsumexperiments/"
 }

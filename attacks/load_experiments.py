@@ -736,14 +736,14 @@ def main():
         print(f"Total number of data for agent {agent}: {nb_data_agent}")
         nb_data += nb_data_agent
     print(f"Total data for the {DATASET} dataset: {nb_data}")
-    EXPERIMENT_DIR = "results/my_results/movielens/2456067_movielens_nonoise_100nodes_1avgsteps_static"
+    EXPERIMENT_DIR = "attacks/my_results/movielens/2456067_movielens_nonoise_100nodes_1avgsteps_static"
 
     all_models_df = get_all_models_properties(
         EXPERIMENT_DIR, NB_AGENTS, NB_MACHINES, ["threshold"]
     )
     print(all_models_df)
 
-    EXPERIMENTS_DIR = "results/my_results/movielens/"
+    EXPERIMENTS_DIR = "attacks/my_results/movielens/"
 
     t0 = time.time()
     all_experiments_df = get_all_experiments_properties(

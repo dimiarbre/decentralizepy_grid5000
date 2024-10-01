@@ -196,10 +196,10 @@ def run_threshold_attack(
             "threshold": pd.DataFrame(default_res_threshold, index=[0]),
             "biasedthreshold": pd.DataFrame(default_res_biasedthreshold, index=[0]),
         }
-
-    print(
-        f"{debug_name} - Train accuracy {acc_train*100:.2f}%, Test accuracy {acc_test*100:.2f}%"
-    )
+    if acc_train is not None and acc_test is not None:
+        print(
+            f"{debug_name} - Train accuracy {acc_train*100:.2f}%, Test accuracy {acc_test*100:.2f}%"
+        )
 
     if debug:
         print(

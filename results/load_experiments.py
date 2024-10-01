@@ -570,9 +570,9 @@ def generate_losses(
             loss = loss_function(y_pred, y)
             loss = loss.to("cpu")
             losses = torch.cat([losses, loss])
+            y_cpu = y.to("cpu")
+            classes = torch.cat([y_cpu, classes])
             if not is_mse:
-                y_cpu = y.to("cpu")
-                classes = torch.cat([y_cpu, classes])
                 _, predictions = torch.max(y_pred, 1)
                 for label, prediction in zip(y, predictions):
                     if label == prediction:
@@ -584,7 +584,7 @@ def generate_losses(
         accuracy = total_correct / total_predicted
         return (losses, classes, accuracy)
     else:
-        return (losses, None, None)
+        return (losses, classes, None)
 
 
 def filter_nans(losses: torch.Tensor, classes, debug_name, loss_type):

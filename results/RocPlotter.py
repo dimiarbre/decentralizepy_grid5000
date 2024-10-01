@@ -85,7 +85,7 @@ class RocPlotter:
         axs_losses_train.set_title(f"{self.next_iteration}")
 
         split_axis = False  # TODO: pass this as an argument and not hardcode it if I need both versions.
-        color_axis_0 = "b" if split_axis else None
+        color_axis_0 = "b" if split_axis else "black"
 
         axs_losses_train.tick_params(axis="y", labelcolor=color_axis_0)
         axs_losses_train.set_ylabel("Train set", color=color_axis_0)

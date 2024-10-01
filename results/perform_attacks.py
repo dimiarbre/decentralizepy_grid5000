@@ -206,6 +206,7 @@ def attack_experiment(
             device=device,
             batch_size=batch_size,
             attacker_model_initializer=SimpleAttacker,
+            debug=debug,
         )
         save_results(
             results_files=results_files,
@@ -278,7 +279,7 @@ def attack_experiment(
                     lens=lens,
                     device=device,
                 )
-                results[attack] = [attack_result]
+                results[attack_todo] = attack_result
 
             else:
                 # TODO: remove this and simply give iteration as a parameter.
@@ -460,7 +461,7 @@ def main(
                         nb_agents=copy.deepcopy(nb_agents),
                         experiment_path=os.path.join(experiments_dir, experiment_name),
                         device_type=copy.deepcopy(device_type),
-                        attack_todo=copy.deepcopy(attacks[0]),
+                        attack_todo=copy.deepcopy(attack),
                         debug=DEBUG,
                     )
                     res = input("Continue? y/n\n")
@@ -526,9 +527,8 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--debug",
-        type=bool,
-        default=False,
-        help="Run in debug mode if true. Adds some printing.",
+        action="store_true",
+        help="Run in debug mode. Adds some printing.",
     )
 
     parser.add_argument(
@@ -553,7 +553,7 @@ if __name__ == "__main__":
     DEBUG = args.debug
     NB_AGENTS = args.nb_agents
     NB_MACHINES = args.nb_machines
-    ALL_ATTACKS = ["classifier"]
+    ALL_ATTACKS = ["classifier", "linkability", "threshold+biasedthreshold"]
 
     main(
         experiments_dir=EXPERIMENT_DIR,

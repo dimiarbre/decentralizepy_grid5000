@@ -322,7 +322,10 @@ def load_movielens(
         local_train_x = local_train_data[["user_id", "item_id"]].to_numpy()
         local_train_y = local_train_data.rating.values.astype("float32")
         local_test_x = local_test_data[["user_id", "item_id"]].to_numpy()
-        local_test_y = local_test_data.rating.values
+        local_test_y = local_test_data.rating.values.astype(
+            "float32"
+        )  # NB: This line was changed compared to the original code to also output float32, so that losses have the same dtype
+        # TODO: ensure this line change is correct
 
         local_train_datasets.append(Data(local_train_x, local_train_y))
         local_test_datasets_x.append(local_test_x)
@@ -341,7 +344,7 @@ def load_movielens(
             f"Generated {nb_nodes} trainsets. Dataset sizes: {[len(local_trainset) for local_trainset in local_train_datasets]}"
         )
         # print(f"Shape of test data: {global_test_dataset.cumulative_sizes}") # Cannot use this if it is not a ConcatDataset
-        print(f"Shape of test data: {global_test_dataset}")
+        print(f"Nb of test data: {len(global_test_dataset)}")
     return PartitionerWrapper(local_train_datasets), global_test_dataset
 
 
@@ -368,7 +371,7 @@ POSSIBLE_MODELS = {
     "RNET": RNET,
     "LeNet": LeNet,
     "CNN": CNN,
-"MatrixFactorization": MatrixFactorization,
+    "MatrixFactorization": MatrixFactorization,
 }
 
 POSSIBLE_LOSSES: dict[str, type[torch.nn.Module]] = {
@@ -546,7 +549,7 @@ def generate_losses(
     device=torch.device("cpu"),
     debug=False,
 ):
-assert (
+    assert (
         loss_function.reduction == "none"
     ), "Reduction should be none to generate all arguments"
     is_mse = isinstance(
@@ -567,20 +570,20 @@ assert (
             loss = loss_function(y_pred, y)
             loss = loss.to("cpu")
             losses = torch.cat([losses, loss])
-if not is_mse:
-            y_cpu = y.to("cpu")
-            classes = torch.cat([y_cpu, classes])
-            _, predictions = torch.max(y_pred, 1)
-            for label, prediction in zip(y, predictions):
-                if label == prediction:
-                    total_correct += 1
-                total_predicted += 1
-if losses.dtype == torch.float64:
+            if not is_mse:
+                y_cpu = y.to("cpu")
+                classes = torch.cat([y_cpu, classes])
+                _, predictions = torch.max(y_pred, 1)
+                for label, prediction in zip(y, predictions):
+                    if label == prediction:
+                        total_correct += 1
+                    total_predicted += 1
+    if losses.dtype == torch.float64:
         losses.float()
     if not is_mse:
-    accuracy = total_correct / total_predicted
-    return (losses, classes, accuracy)
-else:
+        accuracy = total_correct / total_predicted
+        return (losses, classes, accuracy)
+    else:
         return (losses, None, None)
 
 

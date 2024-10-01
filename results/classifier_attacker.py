@@ -162,7 +162,10 @@ def train_classifier(
     loss_function.to(device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     train_losses = []
-    for epoch in tqdm(range(nb_epochs)):
+    iterator = range(nb_epochs)
+    if debug:
+        iterator = tqdm(iterator)
+    for epoch in iterator:
         # print(f"Training iteration {epoch}.")
         model.train()
 
@@ -184,7 +187,7 @@ def train_classifier(
     return train_losses
 
 
-def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.device):
+def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.device,debug:bool = False):
     model.to(device)
     loss_function = nn.CrossEntropyLoss()
     total_correct = 0
@@ -247,10 +250,11 @@ def eval_classifier(model: nn.Module, testloader: DataLoader, device: torch.devi
     print(
         f"Test loss: {loss_val/count}; test accuracy: {accuracy:.2f}%. Predictions: {total_pred}"
     )
-    print(
-        f"Precision for class 0: {precision[0]*100:.2f}%, class 1: {precision[1]*100:.2f}%"
-    )
-    print(f"Recall for class 0: {recall[0]*100:.2f}%, class 1: {recall[1]*100:.2f}%")
+    if debug:
+        print(
+            f"Precision for class 0: {precision[0]*100:.2f}%, class 1: {precision[1]*100:.2f}%"
+        )
+        print(f"Recall for class 0: {recall[0]*100:.2f}%, class 1: {recall[1]*100:.2f}%")
 
     conf_matrix = confusion_matrix(y_true.cpu(), y_pred.cpu(), normalize="true")
 
@@ -481,7 +485,8 @@ def classifier_attack(
         == losses_testset_current_agent.shape[1:]
     )
     nb_dimensions = losses_trainset_current_agent.shape[2]
-    print(f"in_dimension: {nb_dimensions}")
+    if debug:
+        print(f"in_dimension: {nb_dimensions}")
 
     # Reset the model to start from fresh parameters
     attacker_model = attacker_model_initializer(nb_in=nb_dimensions)
@@ -491,8 +496,8 @@ def classifier_attack(
         nb_params = sum([np.prod(p.size()) for p in model_params])
         print(attacker_model)
         print(f"{nb_params:,d} trainable parameters.")
-        print(f"Launching training {agent}")
 
+    print(f"Finished loading - Starting training node {agent}")
     t0 = time.time()
     train_losses = train_classifier(
         attacker_model,
@@ -504,10 +509,11 @@ def classifier_attack(
         weight=weight,
         debug=debug,
     )
-    if debug:
-        t1 = time.time()
-        print(f"Training took {(t1-t0)/60:.2f}min")
-    res = eval_classifier(attacker_model, attacker_testset, device=device)
+    t1 = time.time()
+    print(
+        f"Training {nb_epoch} epochs took {(t1-t0)/60:.2f}min. Speed: {nb_epoch/(t1-t0):.2f}it/s"
+    )
+    res = eval_classifier(attacker_model, attacker_testset, device=device,debug=debug)
     return res, train_losses
 
 

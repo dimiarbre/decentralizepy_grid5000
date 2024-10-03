@@ -278,8 +278,10 @@ if __name__ == "__main__":
         "topology": ["static"],
         # "topology": ["dynamic"],
         #
+        # # Try to always have this parameter set, so that the seed appears in the config file.
         # "random_seed": [f"seed{i}" for i in range(91, 106)],
-        # "random_seed": ["seed90"],
+        "random_seed": ["seed90"],
+        # "random_seed": ["seed1234"],
         #
         # "graph_degree": ["degree6"],
         # "graph_degree": ["degree4"],

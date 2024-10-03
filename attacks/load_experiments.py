@@ -72,11 +72,13 @@ def read_ini(file_path: str, verbose=False) -> LocalConfig:
     return config
 
 
-def safe_load_int(config: LocalConfig, section: str, parameter: str):
+def safe_load(
+    config: LocalConfig, section: str, parameter: str, expected_type: type = int
+):
     value = config.get(section, parameter)
-    if not isinstance(value, int):
+    if not isinstance(value, expected_type):
         raise ValueError(
-            f"Invalid value for parameter {parameter}: expected int, got {value}"
+            f"Invalid value for parameter {parameter}: expected {expected_type}, got {value}"
         )
     return value
 
@@ -551,7 +553,7 @@ def generate_losses(
 ):
     assert (
         loss_function.reduction == "none"
-    ), "Reduction should be none to generate all arguments"
+    ), "Reduction should be none to generate all losses"
     is_mse = isinstance(
         loss_function, MSELoss
     )  # We can't compute some metrics in this case
@@ -718,36 +720,36 @@ def get_all_experiments_properties(
 
 
 def main():
-    DATASET = "MovieLens"
-    NB_CLASSES = POSSIBLE_DATASETS[DATASET][1]
-    NB_AGENTS = 100
-    NB_MACHINES = 2
+    dataset = "MovieLens"
+    nb_classes = POSSIBLE_DATASETS[dataset][1]
+    nb_agents = 100
+    nb_machines = 2
     train_partitioner, test_data = load_dataset_partitioner(
-        DATASET, NB_AGENTS, seed=1234, shards=2, debug=True
+        dataset, nb_agents, seed=1234, shards=2, debug=True
     )
     nb_data = 0
-    for agent in range(NB_AGENTS):
+    for agent in range(nb_agents):
         train_data_current_agent = train_partitioner.use(agent)
         agent_classes_trainset = get_dataset_stats(
-            train_data_current_agent, NB_CLASSES, dataset_name=DATASET
+            train_data_current_agent, nb_classes, dataset_name=dataset
         )
         print(f"Classes for agent {agent}: {agent_classes_trainset}")
         nb_data_agent = sum(agent_classes_trainset)
         print(f"Total number of data for agent {agent}: {nb_data_agent}")
         nb_data += nb_data_agent
-    print(f"Total data for the {DATASET} dataset: {nb_data}")
-    EXPERIMENT_DIR = "attacks/my_results/movielens/2456067_movielens_nonoise_100nodes_1avgsteps_static"
+    print(f"Total data for the {dataset} dataset: {nb_data}")
+    experiment_dir = "attacks/my_results/movielens/2456067_movielens_nonoise_100nodes_1avgsteps_static"
 
     all_models_df = get_all_models_properties(
-        EXPERIMENT_DIR, NB_AGENTS, NB_MACHINES, ["threshold"]
+        experiment_dir, nb_agents, nb_machines, ["threshold"]
     )
     print(all_models_df)
 
-    EXPERIMENTS_DIR = "attacks/my_results/movielens/"
+    experiments_dir = "attacks/my_results/movielens/"
 
     t0 = time.time()
     all_experiments_df = get_all_experiments_properties(
-        EXPERIMENTS_DIR, NB_AGENTS, NB_MACHINES, ALL_ATTACKS
+        experiments_dir, nb_agents, nb_machines, ALL_ATTACKS
     )
     t1 = time.time()
     print(all_experiments_df)

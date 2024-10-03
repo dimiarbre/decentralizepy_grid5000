@@ -4,6 +4,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from load_experiments import read_ini, safe_load
+from localconfig import LocalConfig
 
 ATTRIBUTE_DICT = {
     "network_size": ["128nodes"],
@@ -270,14 +272,14 @@ def load_data(
     return data
 
 
-def load_attack_results(current_experiment_data, experiment_dir):
+def load_threshold_attack_results(current_experiment_data, experiment_dir):
     experiment_name = os.path.basename(experiment_dir)
     expected_file_name = "threshold_" + experiment_name + ".csv"
     directories = sorted(os.listdir(experiment_dir))
 
     if expected_file_name not in directories:
         print(
-            f"Not loading attack results: {expected_file_name} was not listed with attack results in {experiment_dir}. Entire directory:\n{directories}"
+            f"Not loading threshold attack results: {expected_file_name} was not listed with attack results in {experiment_dir}. Entire directory:\n{directories}"
         )
         return current_experiment_data
     attacks_df = pd.read_csv(os.path.join(experiment_dir, expected_file_name))
@@ -302,7 +304,7 @@ def load_linkability_attack_results(current_experiment_data, experiment_dir):
     directories = sorted(os.listdir(experiment_dir))
     if expected_file_name not in directories:
         print(
-            f"Not loading attack results: {expected_file_name} was not listed with attack results in {experiment_dir}. Entire directory:\n{directories}"
+            f"Not loading linkability attack results: {expected_file_name} was not listed with attack results in {experiment_dir}. Entire directory:\n{directories}"
         )
         return current_experiment_data
 
@@ -312,10 +314,12 @@ def load_linkability_attack_results(current_experiment_data, experiment_dir):
 
     linkability_attack_df = linkability_attack_df.rename(columns={"agent": "uid"})
 
+    linkability_attack_df = linkability_attack_df.drop(columns="Unnamed: 0")
+
     return pd.merge(
         current_experiment_data,
         linkability_attack_df,
-        on=["uid", "iteration"],
+        on=["uid", "iteration", "target"],
         how="outer",
     )
 
@@ -326,7 +330,7 @@ def load_biasedthreshold_results(current_experiment_data, experiment_dir):
     directories = sorted(os.listdir(experiment_dir))
     if expected_file_name not in directories:
         print(
-            f"Not loading attack results: {expected_file_name} was not listed with attack results in {experiment_dir}. Entire directory:\n{directories}"
+            f"Not loading biasedthreshold attack results: {expected_file_name} was not listed with attack results in {experiment_dir}. Entire directory:\n{directories}"
         )
         return current_experiment_data
 
@@ -335,20 +339,75 @@ def load_biasedthreshold_results(current_experiment_data, experiment_dir):
     )
 
     biasedthreshold_attack_df = biasedthreshold_attack_df.rename(
-        columns={"agent": "uid"}
+        columns={"agent": "uid", "roc_auc": "biaised_roc_auc"}
     )
+
+    biasedthreshold_attack_df = biasedthreshold_attack_df.drop(columns="Unnamed: 0")
 
     merged = pd.merge(
         current_experiment_data,
         biasedthreshold_attack_df,
-        on=["uid", "iteration"],
+        on=["uid", "iteration", "target"],
         how="outer",
     )
 
     return merged
 
 
-# Function to recompute some of the linkability attack results. Should only be used if there are errors in the data (see perform_attack.py).
+def load_classifier_results(
+    current_experiment_data, experiment_dir: os.PathLike
+) -> pd.DataFrame:
+    """Loads classifier attack results from an experiment file.
+    Note this had to be handled separately from other attack results,
+    as we cannot join on "iteration" since this attack considers multiple iterations.
+
+    Args:
+        experiment_dir (os.PathLike): The path to the experiment
+
+    Returns:
+        pd.DataFrame: The loaded CSV, with some pre-processing/micellaneous renames.
+    """
+    # TODO: Should I consider simply duplicating the attack results for all experiments???
+    experiment_name = os.path.basename(experiment_dir)
+    expected_file_name = f"classifier_{experiment_name}.csv"
+    directories = sorted(os.listdir(experiment_dir))
+    if expected_file_name not in directories:
+        print(
+            "Not loading classifier attack results: "
+            + f"{expected_file_name} was not listed with attack results in {experiment_dir}."
+            + f"Entire directory:\n{directories}"
+        )
+        return pd.DataFrame({})
+
+    classifier_attack_df = pd.read_csv(os.path.join(experiment_dir, expected_file_name))
+
+    classifier_attack_df = classifier_attack_df.rename(
+        columns={
+            "agent": "uid",
+            "roc_auc": "classifier_roc_auc",
+            "attacker_model": "classifier_attacker_model",
+        }
+    )
+
+    classifier_attack_df = classifier_attack_df.rename(
+        columns={
+            f"tpr_at_fpr{fpr}": f"classifier_tpr_at_fpr{fpr}"
+            for fpr in ["0.1", "0.01", "0.001", "0.0001", "1e-05"]
+        }
+    )
+    classifier_attack_df = classifier_attack_df.drop(columns="Unnamed: 0")
+
+    merged = pd.merge(
+        current_experiment_data,
+        classifier_attack_df,
+        on=["uid", "target"],
+        how="left",
+    )
+
+    return merged
+
+
+# Legacy function to recompute some of the linkability attack results. Should only be used if there are errors in the data (see perform_attack.py).
 def fix_linkability_attack_results(experiment_name, attack_results_path):
     expected_file_name = f"linkability_{experiment_name}.csv"
     directories = sorted(os.listdir(attack_results_path))
@@ -397,7 +456,6 @@ def load_data_element(
     max_iteration,
     machine_folder="machine{}",
     result_file="{}_results.json",
-    # TODO: switch to extracting most of those values from the config file to adapt to heterogeneous simulations.
 ):
     name = os.path.basename(experiment_dir)
     g5k_config_file = os.path.join(experiment_dir, "g5k_config.json")
@@ -405,6 +463,10 @@ def load_data_element(
     print(f"Loading config file {g5k_config_file}")
     with open(g5k_config_file, "r") as e:
         g5k_config = json.load(e)
+
+    decentralizepy_config_file = os.path.join(experiment_dir, "config.ini")
+    print(f"Loading config file {decentralizepy_config_file}")
+    decentralizepy_config = read_ini(decentralizepy_config_file, False)
 
     nb_machine = g5k_config["NB_MACHINE"]
     max_processes = int(g5k_config["NB_AGENTS"] / nb_machine)
@@ -419,13 +481,30 @@ def load_data_element(
         starting_iteration=starting_iteration,
         max_iteration=max_iteration,
     ).dropna()
-    current_results = load_attack_results(current_results, experiment_dir)
+    current_results = load_threshold_attack_results(current_results, experiment_dir)
     current_results = load_linkability_attack_results(current_results, experiment_dir)
     current_results = load_biasedthreshold_results(current_results, experiment_dir)
+    current_results = load_classifier_results(current_results, experiment_dir)
     # input_dict[name] = current_results
     attributes = get_attributes(name)
     for attribute, attribute_value in attributes.items():
         current_results[attribute] = attribute_value
+
+    current_results["seed"] = safe_load(
+        decentralizepy_config, "DATASET", "random_seed", int
+    )
+    current_results["model"] = safe_load(
+        decentralizepy_config, "DATASET", "model_class", str
+    )
+    current_results["lr"] = safe_load(
+        decentralizepy_config, "OPTIMIZER_PARAMS", "lr", float
+    )
+    current_results["local_rounds"] = safe_load(
+        decentralizepy_config, "TRAIN_PARAMS", "rounds", int
+    )
+    current_results["batch_size"] = safe_load(
+        decentralizepy_config, "TRAIN_PARAMS", "batch_size", int
+    )
 
     print(f"Finished loading data from {name}")
     return current_results
@@ -476,6 +555,12 @@ def format_data(
     for attribute, attribute_value in experiment_attributes.items():
         usable_data[attribute] = attribute_value
 
+    for attribute in ["lr", "local_rounds", "model", "seed", "batch_size"]:
+        assert (
+            data[attribute].nunique() == 1
+        ), f"{attribute} had multiple values when it shouldn't"
+        usable_data[attribute] = data[attribute].iloc[0]
+
     # Compute an additional column: "{column}_start_avg"
     for column_name in to_start_avg:
         rolled_average = start_avg(usable_data[column_name])
@@ -493,7 +578,7 @@ def format_data(
 
 
 if __name__ == "__main__":
-    EXPERIMENT_DIR = "attacks/my_results/icml_experiments/cifar10"
+    EXPERIMENT_DIR = "attacks/my_results/movielens"
     paths_dict = get_full_path_dict(EXPERIMENT_DIR)
     experiments_dict = get_experiments_dict(paths_dict.keys())
     print(experiments_dict)

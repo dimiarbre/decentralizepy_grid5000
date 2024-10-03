@@ -101,12 +101,12 @@ def attack_experiment(
     dataset = config.dataset.dataset_class
     nb_classes = POSSIBLE_DATASETS[dataset][1]
 
-    seed = load_experiments.safe_load_int(config, "DATASET", "random_seed")
+    seed = load_experiments.safe_load(config, "DATASET", "random_seed")
     if dataset in ["Femnist", "FemnistLabelSplit", "MovieLens"]:
         kshards = None
 
     else:
-        kshards = load_experiments.safe_load_int(config, "DATASET", "shards")
+        kshards = load_experiments.safe_load(config, "DATASET", "shards")
 
     model_name = config.dataset.model_class
     target_model_initializer = POSSIBLE_MODELS[model_name]

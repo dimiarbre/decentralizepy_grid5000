@@ -730,6 +730,7 @@ def main(dataset_name="CIFAR10"):
 
     debug = True
     model_type = SimpleAttacker
+    datasets_dir = "datasets/"
     # model_type = FCNAttacker
 
     device = torch.device("cuda")
@@ -770,7 +771,12 @@ def main(dataset_name="CIFAR10"):
     shapes, lens = load_experiments.generate_shapes(attacked_model)
 
     trainset_partitioner, testset = load_experiments.load_dataset_partitioner(
-        dataset_name, nb_agents, seed, kshards, debug=debug
+        dataset_name,
+        datasets_dir=datasets_dir,
+        total_agents=nb_agents,
+        seed=seed,
+        shards=kshards,
+        debug=debug,
     )
 
     testset = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)

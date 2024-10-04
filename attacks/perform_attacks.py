@@ -89,6 +89,7 @@ def attack_experiment(
     batch_size: int,
     nb_agents: int,
     experiment_path: str,
+    datasets_dir: str,
     device_type: str = "cpu",
     attack_todo="threshold",
     debug=False,
@@ -101,12 +102,12 @@ def attack_experiment(
     dataset = config.dataset.dataset_class
     nb_classes = POSSIBLE_DATASETS[dataset][1]
 
-    seed = load_experiments.safe_load(config, "DATASET", "random_seed")
+    seed = load_experiments.safe_load(config, "DATASET", "random_seed", int)
     if dataset in ["Femnist", "FemnistLabelSplit", "MovieLens"]:
         kshards = None
 
     else:
-        kshards = load_experiments.safe_load(config, "DATASET", "shards")
+        kshards = load_experiments.safe_load(config, "DATASET", "shards", int)
 
     model_name = config.dataset.model_class
     target_model_initializer = POSSIBLE_MODELS[model_name]
@@ -166,7 +167,12 @@ def attack_experiment(
     t1 = time.time()
 
     trainset_partitioner, testset = load_experiments.load_dataset_partitioner(
-        dataset, nb_agents, seed, kshards, debug=DEBUG
+        dataset,
+        datasets_dir=datasets_dir,
+        total_agents=nb_agents,
+        seed=seed,
+        shards=kshards,
+        debug=DEBUG,
     )
     testset = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
 
@@ -409,6 +415,7 @@ def print_finished():
 
 def main(
     experiments_dir,
+    datasets_dir,
     should_clear,
     nb_processes=10,
     batch_size=256,
@@ -416,11 +423,12 @@ def main(
     nb_machines=8,
     attacks=ALL_ATTACKS,
 ):
-    device_type = "cuda:0"
+    device_type = "cuda:0"  # TODO: change this to ensure it is available?
 
     # ---------
     # Running the main attacks on all the experiments
     # ---------
+    print(f"CUDA status: {torch.cuda.is_available()}")
     print("---- Starting main attacks ----")
 
     # experiments_dir = "attacks/my_results/icml_experiments/cifar10/"
@@ -460,6 +468,7 @@ def main(
                         batch_size=copy.deepcopy(batch_size),
                         nb_agents=copy.deepcopy(nb_agents),
                         experiment_path=os.path.join(experiments_dir, experiment_name),
+                        datasets_dir=copy.deepcopy(datasets_dir),
                         device_type=copy.deepcopy(device_type),
                         attack_todo=copy.deepcopy(attack),
                         debug=DEBUG,
@@ -475,6 +484,7 @@ def main(
                         batch_size=copy.deepcopy(batch_size),
                         nb_agents=copy.deepcopy(nb_agents),
                         experiment_path=os.path.join(experiments_dir, experiment_name),
+                        datasets_dir=copy.deepcopy(datasets_dir),
                         device_type=copy.deepcopy(device_type),
                         attack_todo=copy.deepcopy(attack),
                         debug=DEBUG,
@@ -506,6 +516,14 @@ if __name__ == "__main__":
         type=str,
         default="attacks/my_results/test/testing_femnist_convergence_rates/",
         help="Path to the experiment directory",
+    )
+
+    parser.add_argument(
+        "--datasets_dir",
+        type=str,
+        default="datasets/",
+        help="Path to the datasets directory (usually all of them)."
+        + " Useful when running inside a container.",
     )
 
     parser.add_argument(
@@ -547,6 +565,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     EXPERIMENT_DIR = args.experiment_dir
+    DATASETS_DIR = args.datasets_dir
     NB_WORKERS = args.nb_workers
     SHOULD_CLEAR = args.clear
     BATCH_SIZE = args.batch_size
@@ -557,6 +576,7 @@ if __name__ == "__main__":
 
     main(
         experiments_dir=EXPERIMENT_DIR,
+        datasets_dir=DATASETS_DIR,
         should_clear=SHOULD_CLEAR,
         nb_processes=NB_WORKERS,
         batch_size=BATCH_SIZE,

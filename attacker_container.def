@@ -9,6 +9,7 @@ From: ubuntu:22.04
     mkdir /logs
     mkdir /datasets
     mkdir /experiments_to_attack
+    mkdir /decentralizepy_grid5000
     apt-get -y update
     apt-get -y install pip
     pip3 install --upgrade pip tqdm
@@ -29,4 +30,4 @@ From: ubuntu:22.04
     echo "Arguments received: $*"
     set -x
 
-    python results/perform_attacks.py $@ /experiments_to_attack
+    python3 /decentralizepy_grid5000/attacks/perform_attacks.py $@ /experiments_to_attack

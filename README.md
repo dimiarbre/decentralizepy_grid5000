@@ -109,7 +109,7 @@ Under the current configurations, this dataset should not be used. You can simpl
 
 
 ## Using the results
-This section will all be based in the `results/` folder.
+This section will all be based in the `attacks/` folder.
 
 Once you downloaded the results, you can use `data_refactoring_128nodes.ipynb` notebook: rename all the experiments paths appropriately in the first cell, and the script will generate CSV files that gathers all the results.
 

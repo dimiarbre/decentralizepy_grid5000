@@ -4,7 +4,7 @@ import os
 import time
 import traceback
 from collections import defaultdict
-from typing import Optional
+from typing import Any, Optional, Type, TypeVar
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -72,9 +72,12 @@ def read_ini(file_path: str, verbose=False) -> LocalConfig:
     return config
 
 
+T = TypeVar("T")
+
+
 def safe_load(
-    config: LocalConfig, section: str, parameter: str, expected_type: type = int
-):
+    config: LocalConfig, section: str, parameter: str, expected_type: Type[T]
+) -> T:
     value = config.get(section, parameter)
     if not isinstance(value, expected_type):
         raise ValueError(
@@ -83,9 +86,10 @@ def safe_load(
     return value
 
 
-def load_CIFAR10():
+def load_CIFAR10(datasets_dir: str):
     """Generates and partitions the CIFAR10 dataset in the same way as the experiment does."""
     print("Loading CIFAR10 dataset")
+    path = os.path.join(datasets_dir, "cifar10")
     transform = torchvision.transforms.Compose(
         [
             torchvision.transforms.ToTensor(),
@@ -93,10 +97,10 @@ def load_CIFAR10():
         ]
     )
     trainset = torchvision.datasets.CIFAR10(
-        root="datasets/cifar10", train=True, download=True, transform=transform
+        root=path, train=True, download=True, transform=transform
     )
     testset = torchvision.datasets.CIFAR10(
-        root="datasets/cifar10", train=False, download=True, transform=transform
+        root=path, train=False, download=True, transform=transform
     )
     return trainset, testset
 
@@ -182,13 +186,16 @@ def load_Femnist(
     nb_nodes,
     sizes,
     random_seed,
-    femnist_train_dir="datasets/Femnist/femnist/per_user_data/per_user_data/train",
-    femnist_test_dir="datasets/Femnist/femnist/data/test/test",
+    datasets_dir: str,
+    femnist_train_dir="Femnist/femnist/per_user_data/per_user_data/train",
+    femnist_test_dir="Femnist/femnist/data/test/test",
     debug=False,
 ):
     """Generates and partitions the CIFAR10 dataset in the same way as the experiment does."""
     print("Loading Femnist dataset")
-    files = os.listdir(femnist_train_dir)
+    true_femnist_train_dir = os.path.join(datasets_dir, femnist_train_dir)
+    true_femnist_test_dir = os.path.join(datasets_dir, femnist_test_dir)
+    files = os.listdir(true_femnist_train_dir)
     files = [f for f in files if f.endswith(".json")]
     files.sort()
 
@@ -216,7 +223,7 @@ def load_Femnist(
         for cur_file in my_clients:
 
             clients, _, train_data = femnist_read_file(
-                os.path.join(femnist_train_dir, cur_file)
+                os.path.join(true_femnist_train_dir, cur_file)
             )
             for cur_client in clients:
                 node_clients.append(cur_client)
@@ -254,7 +261,7 @@ def load_Femnist(
     # if debug:
     #     plt.show()
 
-    testset = load_Femnist_Testset(femnist_test_dir=femnist_test_dir)
+    testset = load_Femnist_Testset(femnist_test_dir=true_femnist_test_dir)
 
     return PartitionerWrapper(all_trainsets, [], 0), testset
 
@@ -263,16 +270,19 @@ def load_Femnist_labelsplit(
     nb_nodes,
     sizes,
     random_seed,
-    femnist_train_dir="datasets/Femnist_labelsplit/femnist/data/train/64nodes_10shards",  # TODO: fix this hack, and load it from the config file
-    femnist_test_dir="datasets/Femnist_labelsplit/femnist/data/test/test",
+    datasets_dir: str,
+    femnist_train_dir="Femnist_labelsplit/femnist/data/train/64nodes_10shards",  # TODO: fix this hack, and load it from the config file
+    femnist_test_dir="Femnist_labelsplit/femnist/data/test/test",
     debug=False,
 ):
+    true_femnist_train_dir = os.path.join(datasets_dir, femnist_train_dir)
+    true_femnist_test_dir = os.path.join(datasets_dir, femnist_test_dir)
     all_data = []
     for node in range(nb_nodes):
         filename = f"data_{node}.pt"
         if debug:
             print(f"Loading FEMNISTLabelSplit {filename} for node {node}.")
-        node_file = os.path.join(femnist_train_dir, filename)
+        node_file = os.path.join(true_femnist_train_dir, filename)
         node_data = torch.load(node_file)
         temp = np.array(
             [data[0] for data in node_data],
@@ -294,18 +304,19 @@ def load_Femnist_labelsplit(
             f.savefig(f"assets/temp_images/{node}.png")
             plt.close()
 
-    testset = load_Femnist_Testset(femnist_test_dir=femnist_test_dir)
+    testset = load_Femnist_Testset(femnist_test_dir=true_femnist_test_dir)
 
     return PartitionerWrapper(all_data), testset
 
 
 def load_movielens(
-    nb_nodes, sizes, random_seed, debug=False
+    nb_nodes, sizes, random_seed, dataset_dir, debug=False
 ) -> tuple[DataPartitioner, Data]:
+    movielens_dir = os.path.join(dataset_dir, "MovieLens")
     if random_seed is None:
         random_seed = 1234  # To match with the code's default value
     users_count, _, df_train, df_test = decentralizepy.datasets.MovieLens.load_data(
-        train_dir="datasets/MovieLens/",
+        train_dir=movielens_dir,
         random_seed=random_seed,
     )
     local_train_datasets = []
@@ -384,6 +395,7 @@ POSSIBLE_LOSSES: dict[str, type[torch.nn.Module]] = {
 
 def load_dataset_partitioner(
     dataset_name: str,
+    datasets_dir: str,
     total_agents: int,
     seed: int,
     shards: Optional[int],
@@ -418,6 +430,7 @@ def load_dataset_partitioner(
             sizes=sizes,
             random_seed=seed,
             debug=debug,
+            datasets_dir=datasets_dir,
         )
         return all_trainsets, testset
     elif dataset_name == "FemnistLabelSplit":
@@ -428,18 +441,23 @@ def load_dataset_partitioner(
             sizes=sizes,
             random_seed=seed,
             debug=debug,
+            datasets_dir=datasets_dir,
         )
         return all_trainsets, testset
     elif dataset_name == "MovieLens":
         all_trainsets, testset = load_movielens(
-            nb_nodes=total_agents, sizes=sizes, random_seed=seed, debug=debug
+            nb_nodes=total_agents,
+            sizes=sizes,
+            random_seed=seed,
+            dataset_dir=datasets_dir,
+            debug=debug,
         )
         return all_trainsets, testset
     if shards is None:
         raise ValueError(
             f"Got shards as None for {dataset_name} when only Femnist should be the case of None Shards."
         )
-    trainset, testset = loader()
+    trainset, testset = loader(datasets_dir=datasets_dir)
     c_len = len(trainset)
     if sizes is None:
         # Equal distribution of data among processes, from CIFAR10 and not a simplified function.
@@ -721,11 +739,17 @@ def get_all_experiments_properties(
 
 def main():
     dataset = "MovieLens"
+    dataset_dir = "datasets/"
     nb_classes = POSSIBLE_DATASETS[dataset][1]
     nb_agents = 100
     nb_machines = 2
     train_partitioner, test_data = load_dataset_partitioner(
-        dataset, nb_agents, seed=1234, shards=2, debug=True
+        dataset,
+        datasets_dir=dataset_dir,
+        total_agents=nb_agents,
+        seed=1234,
+        shards=2,
+        debug=True,
     )
     nb_data = 0
     for agent in range(nb_agents):

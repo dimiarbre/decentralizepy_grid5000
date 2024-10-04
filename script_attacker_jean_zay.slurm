@@ -4,15 +4,16 @@
 #SBATCH --output=logs/attackerMovieLens.%j.out  # logs (%j = job ID)
 #SBATCH --error=logs/attackerMovieLens.%j.err   # logs (%j = job ID)
 #SBATCH --hint=nomultithread                    # no hyperthreading
-#SBATCH --account=ggl@v100                      # V100 account
+#SBATCH --account=ktn@v100                      # V100 account
 #SBATCH --constraint=v100-16g                   # demander des GPU a 16 Go de RAM
 #SBATCH --nodes=1                               # allocate 1 node (one machine)
 #SBATCH --ntasks-per-node=1                     # allocate 1 task (one processus)
 #SBATCH --gres=gpu:1                            # allocate 1 GPU
 #SBATCH --cpus-per-task=10                      # allocate 10 CPU per task
 #SBATCH --qos=qos_gpu-t3                        # Default QoS, allows 20h
-#SBATCH --time=20:00:00                         # Max job duration
+#SBATCH --time=00:10:00                         # Max job duration
 
+set -x
 module purge
 
 cd ~/work/decentralizepy_grid5000
@@ -56,13 +57,14 @@ if [[ -z "$EXPERIMENT_DIR" || -z "$NB_WORKERS" || -z "$BATCH_SIZE" || -z "$NB_AG
 fi
 
 # Build and run the Apptainer (or Singularity) container command
-srun singularity exec \
-    --bind "$EXPERIMENT_DIR:/experiments_to_attack" my_container.sif \
+srun singularity run \
+    --bind "$EXPERIMENT_DIR:/experiments_to_attack" \
     --bind $SCRATCH/datasets:/datasets \
     --bind $WORK/decentralizepy_grid5000:/decentralizepy_grid5000 \
+    --nv \
     $SINGULARITY_ALLOWED_DIR/attacker_container.sif \
-    --nb_workers "$NB_WORKERS" \
-    --batch_size "$BATCH_SIZE" \
-    --nb_agents "$NB_AGENTS" \
-    --nb_machines "$NB_MACHINES" \
-    /experiments_to_attack/
+    "--nb_workers $NB_WORKERS \
+    --batch_size $BATCH_SIZE \
+    --nb_agents $NB_AGENTS \
+    --nb_machines $NB_MACHINES \
+    --datasets_dir /datasets" #The datasets folder is binded to /datasets, which will be viewed by the container.

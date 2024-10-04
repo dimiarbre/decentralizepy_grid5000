@@ -425,7 +425,7 @@ def scatter_averaged_experiments(
     def last(series):
         return series.dropna().iloc[-1]
 
-    data_to_plot = data_groups.agg(["max", "mean", last]).reset_index()
+    data_to_plot = data_groups.agg(["max", "mean", "min", last]).reset_index()
 
     data_to_plot.columns = [
         " ".join(e) if len(e[-1]) > 0 else e[0] for e in data_to_plot.columns

@@ -11,4 +11,4 @@ chmod +x setup_control.sh
 ./setup_control.sh
 source /tmp/custom_python/bin/activate;
 
-python results/perform_attacks.py $@
+python attacks/perform_attacks.py $@

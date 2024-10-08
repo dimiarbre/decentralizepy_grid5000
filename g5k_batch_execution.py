@@ -12,14 +12,7 @@ from g5k_execution import launch_experiment
 from utils import generate_config_files
 
 g5kconfig_mapping: dict[tuple[str, str], str] = {
-    ("nonoise", "cifar"): os.path.join("g5k_config/training_128nodes_nonoise.json"),
-    ("muffliato", "cifar"): os.path.join("g5k_config/training_128nodes_muffliato.json"),
-    ("zerosum_selfnoise", "cifar"): os.path.join(
-        "g5k_config/training_128nodes_zerosum.json"
-    ),
-    ("zerosum_noselfnoise", "cifar"): os.path.join(
-        "g5k_config/training_128nodes_zerosum_noselfnoise.json"
-    ),
+    ("any", "cifar"): os.path.join("g5k_config/training_128nodes_nonoise.json"),
     # Femnist dataset
     ("nonoise", "femnist"): os.path.join(
         "g5k_config/femnist_128nodes_static_nonoise.json"
@@ -230,14 +223,14 @@ if __name__ == "__main__":
     possible_attributes = {
         # "nbnodes": ["256nodes"],
         # "nbnodes": ["128nodes"],
-        "nbnodes": ["100nodes"],
+        # "nbnodes": ["100nodes"],
         # "nbnodes": ["64nodes"],
         #
         # "variant": ["nonoise", "zerosum_selfnoise", "zerosum_noselfnoise"],
-        # "variant": ["nonoise", "zerosum_selfnoise"],
+        "variant": ["nonoise", "zerosum_selfnoise"],
         # "variant": ["zerosum_selfnoise"],
         # "variant": ["nonoise"],
-        "variant": ["muffliato"],
+        # "variant": ["muffliato"],
         #
         # "avgsteps": ["10avgsteps"],
         "avgsteps": ["5avgsteps"],
@@ -251,20 +244,20 @@ if __name__ == "__main__":
         # ],
         #
         "noise_level": [
-            # "128th",
-            # "64th",
-            # "32th",
+            "128th",
+            "64th",
+            "32th",
             "16th",
             "8th",
             "4th",
             "2th",
             "1th",
-            # "0p25th",
-            # "0p5th",
-            # "0p75th",
-            # "2p5th",
-            # "3th",
-            # "3p5th",
+            "0p25th",
+            "0p5th",
+            "0p75th",
+            "2p5th",
+            "3th",
+            "3p5th",
         ],
         # "noise_level": ["128th", "64th", "32th", "16th", "8th", "4th", "2th", "1th"],
         # "noise_level": ["128th", "1th"],
@@ -274,35 +267,36 @@ if __name__ == "__main__":
         # "noise_level": ["0p25th", "0p5th", "0p75th", "2p5th", "3th", "3p5th"],
         # "noise_level": ["4th", "16th", "64th"],
         #
-        # "topology": ["static", "dynamic"],
-        "topology": ["static"],
+        "topology": ["static", "dynamic"],
+        # "topology": ["static"],
         # "topology": ["dynamic"],
         #
         # # Try to always have this parameter set, so that the seed appears in the config file.
         # "random_seed": [f"seed{i}" for i in range(91, 106)],
-        "random_seed": ["seed90"],
-        # "random_seed": ["seed1234"],
+        # "random_seed": ["seed90"],  # CIFAR10
+        "random_seed": ["seed1234"],  # MovieLens
         #
         # "graph_degree": ["degree6"],
         # "graph_degree": ["degree4"],
         # "graph_degree": ["degree5"],
         #
-        # "model_class": ["LeNet"],
+        # "model_class": ["LeNet"],  # For CIFAR10
         # "model_class": ["RNET"],
         # "model_class": ["CNN"],
-        # "model_class": ["MatrixFactorization"],  # For MovieLens
+        "model_class": ["MatrixFactorization"],  # For MovieLens
         #
         # "lr": ["lr0.05", "lr0.01", "lr0.10"],
         # "lr": ["lr0.05", "lr0.01", "lr0.10", "lr0.5", "lr0.075", "lr1.0"],
-        # "lr": ["lr0.075"],
-        # "lr": ["lr0.05"],
+        "lr": ["lr0.075"],  # MovieLens
+        # "lr": ["lr0.05"],  # For CIFAR10
         #
-        # "batchsize":["batchsize32"],
+        "batchsize": ["batchsize32"],  # CIFAR10, MovieLens
         # "batchsize": ["batchsize512", "batchsize1024", "batchsize2048"],
         #
+        # Uncomment this for MovieLens.
         # "rounds": ["5rounds", "3rounds", "2rounds", "1rounds"],
         # "rounds": ["20rounds", "10rounds"],
-        # "rounds": ["3rounds"],
+        # "rounds": ["3rounds"],  # CIFAR10
         # "rounds": ["1rounds"],
     }
     ARGS = get_arguments()

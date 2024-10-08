@@ -123,16 +123,7 @@ def handle_special_parameters_values(
 
 
 baseconfig_mapping = {
-    ("nonoise", "cifar"): os.path.join("run_configuration/only_training_nonoise.ini"),
-    ("muffliato", "cifar"): os.path.join(
-        "run_configuration/only_training_muffliato.ini"
-    ),
-    ("zerosum_selfnoise", "cifar"): os.path.join(
-        "run_configuration/only_training_zerosum.ini"
-    ),
-    ("zerosum_noselfnoise", "cifar"): os.path.join(
-        "run_configuration/only_training_zerosum_noselfnoise.ini"
-    ),
+    ("any", "cifar"): os.path.join("run_configuration/only_training_nonoise.ini"),
     ("nonoise", "femnist"): os.path.join("run_configuration/femnist_nonoise.ini"),
     ("muffliato", "femnist"): os.path.join("run_configuration/femnist_muffliato.ini"),
     ("zerosum_selfnoise", "femnist"): os.path.join(

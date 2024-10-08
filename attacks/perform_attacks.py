@@ -18,7 +18,7 @@ import pandas as pd
 import torch
 import torch.utils
 import torch.utils.data
-from classifier_attacker import SimpleAttacker, run_classifier_attack
+from classifier_attacker import Mode, SimpleAttacker, run_classifier_attack
 from LinkabilityAttack import LinkabilityAttack
 from load_experiments import (
     ALL_ATTACKS,
@@ -123,7 +123,7 @@ def attack_experiment(
         "threshold+biasedthreshold",  # Those two attacks can be combined to save time and energy.
         "classifier",
     ]
-
+    # Dirty way to handle multiple attacks at the same time, but reduces evaluation time.
     if attack_todo == "threshold+biasedthreshold":
         results_files = {}
         result_file_threshold = os.path.join(
@@ -150,16 +150,22 @@ def attack_experiment(
         else:
             results_files["biasedthreshold"] = result_file_biasedthreshold
 
+    starting_results = pd.DataFrame({})
     if attack_todo in ["linkability", "threshold", "biasedthreshold", "classifier"]:
         results_files = {}
         results_file = os.path.join(
             experiment_path, f"{attack_todo}_{experiment_name}.csv"
         )
         if os.path.exists(results_file):
-            print(
-                f"{attack_todo}-attack already computed for {experiment_name}, skipping"
-            )
-            return
+            if (
+                attack_todo == "classifier"
+            ):  # Only case where checkpointing is designed.
+                starting_results = pd.read_csv(results_file)
+            else:
+                print(
+                    f"{attack_todo}-attack already computed for {experiment_name}, skipping"
+                )
+                return
         results_files[attack_todo] = results_file
 
     device = torch.device(device_type)
@@ -200,6 +206,8 @@ def attack_experiment(
 
     total_result = {}
     if attack_todo == "classifier":
+        fractions = [0.25, 0.5, 0.7]  # TODO: change this to a parameter?
+        attack_modes: list[Mode] = ["all", "last"]
         total_result["classifier"] = run_classifier_attack(
             models_properties=current_experiment,
             experiment_dir=experiment_path,
@@ -213,6 +221,9 @@ def attack_experiment(
             batch_size=batch_size,
             attacker_model_initializer=SimpleAttacker,
             debug=debug,
+            fractions=fractions,
+            attacked_informations=attack_modes,
+            starting_results=starting_results,
         )
         save_results(
             results_files=results_files,
@@ -270,7 +281,8 @@ def attack_experiment(
             else:
                 endline = "\r"
             print(
-                f"Launching {attack_todo} attack {agent}->{target} at iteration {iteration}, {(tcurrent-t1)/60:.2f} minutes taken to reach this point"
+                f"Launching {attack_todo} attack {agent}->{target} at iteration {iteration}, "
+                + f"{(tcurrent-t1)/60:.2f} minutes taken to reach this point"
                 + " " * 10,
                 end=endline,
             )

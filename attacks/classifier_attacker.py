@@ -1,8 +1,9 @@
+import itertools
 import os
 import random
 import time
 from math import floor
-from typing import Optional
+from typing import Literal, Optional, Union
 
 import load_experiments
 import matplotlib.pyplot as plt
@@ -23,6 +24,8 @@ from sklearn.metrics import (
 )
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+
+Mode = Literal["all", "last"]
 
 
 # TODO: replace this with the Data class? This seems to be essentially the same.
@@ -385,15 +388,15 @@ def generate_y_data(trainset, testset):
 
 
 def generate_attacker_dataset(
-    losses_trainset, losses_testset, fractions, batch_size=256, seed=421
+    losses_trainset, losses_testset, fraction: float, batch_size=256, seed=421
 ):
     generator = torch.Generator()
     generator.manual_seed(seed)
-    nb_training_samples_from_train = floor(len(losses_trainset) * fractions)
+    nb_training_samples_from_train = floor(len(losses_trainset) * fraction)
     trainset_for_train, trainset_for_test = split_data(
         losses_trainset, nb_train=nb_training_samples_from_train, generator=generator
     )
-    nb_training_samples_from_test = floor(len(losses_testset) * fractions)
+    nb_training_samples_from_test = floor(len(losses_testset) * fraction)
     testset_for_train, testset_for_test = split_data(
         losses_testset, nb_train=nb_training_samples_from_test, generator=generator
     )
@@ -431,6 +434,16 @@ def generate_attacker_dataset(
     return dataloader_train, dataloader_test, weight
 
 
+def filter_attacked_information(losses: torch.Tensor, mode: Mode):
+    if mode == "all":
+        return losses
+    elif mode == "last":
+        return losses[:, :, -5:]
+
+    else:
+        raise ValueError(f"Unexpected filter mode {mode}.")
+
+
 def classifier_attack(
     agent_model_properties,
     trainset,
@@ -442,7 +455,7 @@ def classifier_attack(
     device,
     agent,
     attacker_model_initializer,
-    fractions: float,
+    configurations: list[tuple[Mode, float]],
     nb_epoch: int,
     batch_size=256,
     lr=0.01,
@@ -475,50 +488,64 @@ def classifier_attack(
         debug=debug,
     )
 
-    attacker_trainset, attacker_testset, weight = generate_attacker_dataset(
-        losses_trainset_current_agent,
-        losses_testset_current_agent,
-        fractions=fractions,
-        batch_size=batch_size,
-        seed=421,
-    )
+    all_res = {}
+    for attacked_information_mode, fraction in configurations:
+        # TODO: the first three calls here could be optimized
+        # Duplicate mode are filtered multiple times. Nested loops would be fix this..
+        # Since both operations are very quick (only index handling), I did not bother to do it.
+        filtered_losses_trainset = filter_attacked_information(
+            losses_trainset_current_agent, attacked_information_mode
+        )
+        filtered_losses_testset = filter_attacked_information(
+            losses_testset_current_agent, attacked_information_mode
+        )
+        attacker_trainset, attacker_testset, weight = generate_attacker_dataset(
+            filtered_losses_trainset,
+            filtered_losses_testset,
+            fraction=fraction,
+            batch_size=batch_size,
+            seed=421,  # TODO:change this so it can be specified?
+        )
 
-    # This handles cases where there are Nans or invalid models.
-    assert (
-        losses_trainset_current_agent.shape[1:]
-        == losses_testset_current_agent.shape[1:]
-    )
-    nb_dimensions = losses_trainset_current_agent.shape[2]
-    if debug:
-        print(f"in_dimension: {nb_dimensions}")
+        # This handles cases where there are Nans or invalid models.
+        assert filtered_losses_trainset.shape[1:] == filtered_losses_testset.shape[1:]
+        nb_dimensions = filtered_losses_trainset.shape[2]
+        if debug:
+            print(f"in_dimension: {nb_dimensions}")
 
-    # Reset the model to start from fresh parameters
-    attacker_model = attacker_model_initializer(nb_in=nb_dimensions)
+        # Reset the model to start from fresh parameters
+        attacker_model = attacker_model_initializer(nb_in=nb_dimensions)
 
-    model_params = filter(lambda p: p.requires_grad, attacker_model.parameters())
-    if debug:
-        nb_params = sum([np.prod(p.size()) for p in model_params])
-        print(attacker_model)
-        print(f"{nb_params:,d} trainable parameters.")
+        model_params = filter(lambda p: p.requires_grad, attacker_model.parameters())
+        if debug:
+            nb_params = sum(np.prod(p.size()) for p in model_params)
+            print(attacker_model)
+            print(f"{nb_params:,d} trainable parameters.")
 
-    print(f"Finished loading - Starting training node {agent}")
-    t0 = time.time()
-    train_losses = train_classifier(
-        attacker_model,
-        attacker_trainset,
-        device=device,
-        nb_epochs=nb_epoch,
-        lr=lr,
-        momentum=momentum,
-        weight=weight,
-        debug=debug,
-    )
-    t1 = time.time()
-    print(
-        f"Training {nb_epoch} epochs took {(t1-t0)/60:.2f}min. Speed: {nb_epoch/(t1-t0):.2f}it/s"
-    )
-    res = eval_classifier(attacker_model, attacker_testset, device=device, debug=debug)
-    return res, train_losses
+        print(
+            f"Finished loading - Starting training node {agent} with config {attacked_information_mode, fraction}"
+        )
+        t0 = time.time()
+        train_losses = train_classifier(
+            attacker_model,
+            attacker_trainset,
+            device=device,
+            nb_epochs=nb_epoch,
+            lr=lr,
+            momentum=momentum,
+            weight=weight,
+            debug=debug,
+        )
+        t1 = time.time()
+        print(
+            f"Training {nb_epoch} epochs took {(t1-t0)/60:.2f}min. Speed: {nb_epoch/(t1-t0):.2f}it/s"
+        )
+        res = eval_classifier(
+            attacker_model, attacker_testset, device=device, debug=debug
+        )
+        all_res[(attacked_information_mode, fraction)] = (res, train_losses)
+
+    return all_res
 
 
 def generate_statistics_figure(
@@ -531,13 +558,14 @@ def generate_statistics_figure(
     roc_auc,
     accuracy,
     node_id,
+    fraction,
 ):
     fig, axs = plt.subplots(2, 2)
 
     # Plot the evolution of the train loss
     ax = axs[0, 0]
     ax.plot(train_losses)
-    ax.set_title(f"Train loss evolution. Final accuracy: {accuracy:.2f}%")
+    ax.set_title(f"Train loss evolution.\nFinal accuracy: {accuracy:.2f}%")
 
     # Plot the confusion matrix
     ax = axs[1, 0]
@@ -581,9 +609,13 @@ def generate_statistics_figure(
     fig.suptitle(f"{experiment_name}")
     plt.tight_layout()
 
-    figpath = os.path.join(
-        experiment_dir, f"classifier_attack_summary_node{node_id}.png"
+    fig_dir = os.path.join(
+        experiment_dir,
+        f"classifier_attacker/fraction{fraction}",
     )
+    if not os.path.exists(fig_dir):
+        os.makedirs(fig_dir)
+    figpath = os.path.join(fig_dir, f"classifier_attack_summary_node{node_id}.png")
     fig.savefig(figpath)
 
     plt.close(fig)
@@ -635,15 +667,68 @@ def run_classifier_attack(
     device,
     batch_size,
     attacker_model_initializer=SimpleAttacker,
-    fractions=0.7,
+    fractions: Union[float, list[float]] = 0.7,
+    attacked_informations: Union[Mode, list[Mode]] = "all",
+    starting_results=pd.DataFrame({}),
     nb_epoch=300,
     lr=0.01,
     momentum=0.9,
     debug=False,
 ):
     experiment_name = os.path.basename(experiment_dir)
+
+    if isinstance(fractions, float):
+        fractions = [fractions]
+    assert isinstance(fractions, list)
+
+    if isinstance(attacked_informations, str):
+        attacked_informations = [attacked_informations]
+    assert isinstance(attacked_informations, list)
+
+    configurations = list(itertools.product(attacked_informations, fractions))
+    if not starting_results.empty:
+        # Check if some results were already computed, and if yes remove them.
+        filtered_configurations = []
+
+        # Handle legacy code that did not log this, by using the default value at the time.
+        # This will also correct the data structure, which is a big plus.
+        if "attacker_fraction" not in starting_results.columns:
+            print(
+                "Detected experiment without 'attacker_fraction' set, filling with '0.7'."
+            )
+            starting_results["attacker_fraction"] = 0.7
+
+        if "attacked_information" not in starting_results.columns:
+            print(
+                "Detected experiment without 'attacked_information' set, filling with 'all'."
+            )
+            starting_results["attacked_information"] = "all"
+
+        already_computed_tuples = list(
+            starting_results[["attacked_information", "attacker_fraction"]]
+            .drop_duplicates()
+            .itertuples(index=False, name=None)
+        )
+        for config_tuple in configurations:
+            if config_tuple in already_computed_tuples:
+                print(
+                    f"Classifier attack with configuration {config_tuple} already computed, skipping"
+                )
+            else:
+                filtered_configurations.append(config_tuple)
+
+        if not filtered_configurations:
+            print(
+                f"Found no new thing to compute for classifier attack on {experiment_name}. "
+                + f"Modes: {attacked_informations}."
+                + f"Fractions: {fractions}."
+            )
+            # We raise an error to avoid overriding existing results.
+            raise RuntimeError("All classifier attack were computed.")
+        configurations = filtered_configurations
+
     groups = models_properties.groupby("agent")
-    all_results = pd.DataFrame({})
+    all_results = starting_results
     for agent, agent_model_properties in groups:
         targets = agent_model_properties["target"].to_numpy()
         # TODO: this probably won't work on a dynamic topology, I'll probably need to do a second group by
@@ -654,7 +739,7 @@ def run_classifier_attack(
         trainset_local_node = DataLoader(
             trainset_local_node, batch_size=batch_size, shuffle=False
         )
-        current_res, train_losses = classifier_attack(
+        classifier_res = classifier_attack(
             agent_model_properties,
             trainset=trainset_local_node,
             testset=testset,
@@ -665,61 +750,69 @@ def run_classifier_attack(
             device=device,
             agent=agent,
             attacker_model_initializer=attacker_model_initializer,
-            fractions=fractions,
+            configurations=configurations,
             nb_epoch=nb_epoch,
             batch_size=batch_size,
             lr=lr,
             momentum=momentum,
             debug=debug,
         )
-        (
-            loss_val,
-            accuracy,
-            precision,
-            recall,
-            correct_pred,
-            total_pred,
-            conf_matrix,
-            (y_true, y_proba),
-        ) = current_res
+        for (attacked_information_mode, fraction), (
+            res,
+            train_losses,
+        ) in classifier_res.items():
+            (
+                loss_val,
+                accuracy,
+                precision,
+                recall,
+                correct_pred,
+                total_pred,
+                conf_matrix,
+                (y_true, y_proba),
+            ) = res
 
-        y_true, y_proba = y_true.cpu(), y_proba.cpu()
-        roc_auc = roc_auc_score(y_true=y_true, y_score=y_proba)
-        fpr, tpr, _ = roc_curve(y_true, y_proba)
+            y_true, y_proba = y_true.cpu(), y_proba.cpu()
+            roc_auc = roc_auc_score(y_true=y_true, y_score=y_proba)
+            fpr, tpr, _ = roc_curve(y_true, y_proba)
 
-        # TODO: make this a global variable?
-        fpr_to_consider = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+            # TODO: make this a global variable?
+            fpr_to_consider = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
 
-        scores = sample_specific_scores(
-            tpr=tpr, fpr=fpr, fpr_to_consider=fpr_to_consider
-        )
+            scores = sample_specific_scores(
+                tpr=tpr, fpr=fpr, fpr_to_consider=fpr_to_consider
+            )
 
-        # Generate visualization plots.
-        generate_statistics_figure(
-            experiment_name=experiment_name,
-            experiment_dir=experiment_dir,
-            train_losses=train_losses,
-            conf_matrix=conf_matrix,
-            y_true=y_true,
-            y_proba=y_proba,
-            roc_auc=roc_auc,
-            accuracy=accuracy,
-            node_id=agent,
-        )
+            # Generate visualization plots.
+            generate_statistics_figure(
+                experiment_name=experiment_name,
+                experiment_dir=experiment_dir,
+                train_losses=train_losses,
+                conf_matrix=conf_matrix,
+                y_true=y_true,
+                y_proba=y_proba,
+                roc_auc=roc_auc,
+                accuracy=accuracy,
+                node_id=agent,
+                fraction=fraction,
+            )
 
-        # Organize results in the DF.
-        current_res = {}
-        current_res["agent"] = [agent]
-        current_res["roc_auc"] = [roc_auc]
-        current_res["target"] = [target]
-        current_res["attacker_model"] = [attacker_model_initializer.__name__]
+            # Organize results in the DF.
+            current_res = {}
+            current_res["agent"] = [agent]
+            current_res["roc_auc"] = [roc_auc]
+            current_res["target"] = [target]
+            current_res["attacker_model"] = [attacker_model_initializer.__name__]
+            current_res["attacker_fraction"] = [
+                fraction
+            ]  # The training fraction that was used for training the attacker model.
+            current_res["attacked_information"] = [attacked_information_mode]
+            for fpr_target, tpr_value in scores.items():
+                current_res[f"tpr_at_fpr{fpr_target}"] = tpr_value
 
-        for fpr_target, tpr_value in scores.items():
-            current_res[f"tpr_at_fpr{fpr_target}"] = tpr_value
-
-        df_current_res = pd.DataFrame(current_res)
-        df_current_res.set_index("agent")
-        all_results = pd.concat([all_results, df_current_res])
+            df_current_res = pd.DataFrame(current_res)
+            df_current_res.set_index("agent")
+            all_results = pd.concat([all_results, df_current_res])
 
     return all_results
 
@@ -738,6 +831,7 @@ def main(dataset_name="CIFAR10"):
     loss_function = torch.nn.CrossEntropyLoss(reduction="none")
     size_train = 2000  # 2000 in the original paper
     fractions = 0.7
+    attacked_informations = "all"
     nb_epoch = 300
     lr = 0.01
     momentum = 0.9
@@ -803,6 +897,7 @@ def main(dataset_name="CIFAR10"):
         batch_size=batch_size,
         attacker_model_initializer=model_type,
         fractions=fractions,
+        attacked_informations=attacked_informations,
         nb_epoch=nb_epoch,
         lr=lr,
         momentum=momentum,

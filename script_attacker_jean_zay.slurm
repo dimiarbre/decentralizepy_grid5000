@@ -11,7 +11,7 @@
 #SBATCH --gres=gpu:1                            # allocate 1 GPU
 #SBATCH --cpus-per-task=10                      # allocate 10 CPU per task
 #SBATCH --qos=qos_gpu-t3                        # Default QoS, allows 20h
-#SBATCH --time=00:10:00                         # Max job duration
+#SBATCH --time=20:00:00                         # Max job duration
 
 set -x
 module purge

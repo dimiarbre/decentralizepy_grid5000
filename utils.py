@@ -1,6 +1,7 @@
 import copy
 import os
 from itertools import product
+from typing import Optional, Type, TypeVar
 
 from localconfig import LocalConfig
 
@@ -65,6 +66,47 @@ def read_ini(file_path: str, verbose=False) -> LocalConfig:
                 print((key, value))
         print(dict(config.items("DATASET")))
     return config
+
+
+model_estimation = {  # Model size in GB
+    "RNET": 12 / 1000,  # 12 MB in GB.
+    "LeNet": 360 / (1000 * 1000),  # 360 kB
+    # NB: For MovieLens, the size can vary depending on the data split.
+    "MatrixFactorization": 1000 / (1000 * 1000),  # 1000 kB.
+}
+
+T = TypeVar("T")
+
+
+def safe_load(
+    config: LocalConfig, section: str, parameter: str, expected_type: Type[T]
+) -> T:
+    value = config.get(section, parameter)
+    if not isinstance(value, expected_type):
+        raise ValueError(
+            f"Invalid value for parameter {parameter}: expected {expected_type}, got {value}"
+        )
+    return value
+
+
+def space_estimator(
+    nb_experiments, nbnodes, total_iteration, config: LocalConfig
+) -> int:
+    save_frequency = safe_load(config, "SHARING", "save_models_for_attacks", int)
+    save_all_models = safe_load(config, "SHARING", "save_all_models", int)
+    model_name = safe_load(config, "DATASET", "model_class", str)
+    assert isinstance(model_name, str)
+    if save_all_models:
+        nb_models_saved = nbnodes
+    else:
+        nb_models_saved = config.get("SHARING", "nb_models_to_save")
+
+    experiment_estimation = (
+        (total_iteration // save_frequency)
+        * nb_models_saved
+        * model_estimation[model_name]
+    )
+    return experiment_estimation * nb_experiments
 
 
 VARIANT_MAPPER = {  # The parameters for "sharing_package" and "sharing_class".
@@ -132,17 +174,8 @@ baseconfig_mapping = {
     ("zerosum_noselfnoise", "femnist"): os.path.join(
         "run_configuration/femnist_zerosum_noselfnoise.ini"
     ),
-    ("nonoise", "femnistLabelSplit"): os.path.join(
+    ("any", "femnistLabelSplit"): os.path.join(
         "run_configuration/femnist_labelsplit_nonoise.ini"
-    ),
-    ("muffliato", "femnistLabelSplit"): os.path.join(
-        "run_configuration/femnist_labelsplit_muffliato.ini"
-    ),
-    ("zerosum_selfnoise", "femnistLabelSplit"): os.path.join(
-        "run_configuration/femnist_labelsplit_zerosum.ini"
-    ),
-    ("zerosum_noselfnoise", "femnistLabelSplit"): os.path.join(
-        "run_configuration/femnist_labelsplit_zerosum_noselfnoise.ini"
     ),
     ("any", "movielens"): os.path.join(
         "run_configuration/config_movielens_sharing.ini"
@@ -170,7 +203,7 @@ noises_mapping = {
 }
 
 
-def generate_config(combination_dict, dataset):
+def generate_config(combination_dict, dataset) -> Optional[LocalConfig]:
     variant = combination_dict["variant"]
     if ("any", dataset) in baseconfig_mapping:
         baseconfig = baseconfig_mapping[("any", dataset)]
@@ -204,7 +237,7 @@ def generate_config_files(
 ) -> dict[str, tuple[dict[str, str], LocalConfig]]:
     # TODO: handle dynamic topology
     configs = {}
-    all_combinations = []
+    all_combinations: list[dict[str, str]] = []
     for variant in attributes_values["variant"]:
         current_attributes_dict = copy.deepcopy(attributes_values)
         del current_attributes_dict["variant"]
@@ -229,7 +262,7 @@ def generate_config_files(
         if current_config is not None:
             configs[
                 "_".join([param_value for _, param_value in combination_dict.items()])
-            ] = (combination_dict, str(current_config))
+            ] = (combination_dict, current_config)
         else:
             print(
                 f"Config was skipped because of incompatible parameters: {combination_dict}"

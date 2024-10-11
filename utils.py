@@ -95,17 +95,15 @@ def space_estimator(
     save_frequency = safe_load(config, "SHARING", "save_models_for_attacks", int)
     save_all_models = safe_load(config, "SHARING", "save_all_models", int)
     model_name = safe_load(config, "DATASET", "model_class", str)
-    assert isinstance(model_name, str)
     if save_all_models:
-        nb_models_saved = nbnodes
+        nb_nodes_saving = nbnodes
     else:
-        nb_models_saved = config.get("SHARING", "nb_models_to_save")
+        nb_nodes_saving = config.get("SHARING", "nb_models_to_save")
 
-    experiment_estimation = (
-        (total_iteration // save_frequency)
-        * nb_models_saved
-        * model_estimation[model_name]
-    )
+    nb_models_to_save = (total_iteration // save_frequency) * nb_nodes_saving
+
+    print(f"Estimated number of models to save: {nb_models_to_save}")
+    experiment_estimation = nb_models_to_save * model_estimation[model_name]
     return experiment_estimation * nb_experiments
 
 

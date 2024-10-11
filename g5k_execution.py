@@ -127,7 +127,7 @@ CONTAINER_FILE = REMOTE_INPUT_DIR + "/compute_container.sif"
 REMOTE_GROUP_STORAGE = "/home/dlereverend/wide_storage/dlereverend_zerosum"
 
 
-def launch_experiment(g5k_config, decentralizepy_config, debug, is_remote):
+def launch_experiment(g5k_config, decentralizepy_config: str, debug, is_remote):
     true_job_name = g5k_config["job_name"]
     # Job names over 100 characters get a bad querry error.
     if len(true_job_name) > 100:

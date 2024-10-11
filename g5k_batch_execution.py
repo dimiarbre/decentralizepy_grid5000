@@ -41,7 +41,7 @@ toplogy_dynamicity_mapping: dict[str, str] = {
 
 
 def launch_experiment_wrapper(
-    g5k_config, decentralizepy_config, debug, is_remote, name
+    g5k_config, decentralizepy_config: str, debug, is_remote, name
 ):
     print(f"Launching experiment {name}")
     log_file_path = "/tmp/logs/" + name + ".out"
@@ -135,6 +135,7 @@ def launch_batch(
             ), f"{avgsteps_str} should be an int, total:{attributes['avgsteps']}"
             g5k_config["AVERAGING_STEPS"] = int(avgsteps_str)
             g5k_config["job_type"] = job_type
+            decentralizepy_config_str = str(decentralizepy_config)
             if debug:
                 print("-" * 40)
                 print(f"Current decentralizepy config:\n{decentralizepy_config}")
@@ -143,7 +144,7 @@ def launch_batch(
                 if res == "y":
                     launch_experiment_wrapper(
                         g5k_config=g5k_config,
-                        decentralizepy_config=decentralizepy_config,
+                        decentralizepy_config=decentralizepy_config_str,
                         debug=False,
                         is_remote=is_remote,
                         name=copy.deepcopy(name),
@@ -155,7 +156,7 @@ def launch_batch(
                     executor.submit(
                         launch_experiment_wrapper,
                         g5k_config=copy.deepcopy(g5k_config),
-                        decentralizepy_config=copy.deepcopy(decentralizepy_config),
+                        decentralizepy_config=copy.deepcopy(decentralizepy_config_str),
                         debug=copy.deepcopy(False),
                         is_remote=copy.deepcopy(is_remote),
                         name=copy.deepcopy(name),

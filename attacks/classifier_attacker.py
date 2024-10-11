@@ -558,6 +558,7 @@ def generate_statistics_figure(
     roc_auc,
     accuracy,
     node_id,
+    mode,
     fraction,
 ):
     fig, axs = plt.subplots(2, 2)
@@ -611,7 +612,7 @@ def generate_statistics_figure(
 
     fig_dir = os.path.join(
         experiment_dir,
-        f"classifier_attacker/fraction{fraction}",
+        f"classifier_attacker/mode{mode}_fraction{fraction}",
     )
     if not os.path.exists(fig_dir):
         os.makedirs(fig_dir)
@@ -794,6 +795,7 @@ def run_classifier_attack(
                 roc_auc=roc_auc,
                 accuracy=accuracy,
                 node_id=agent,
+                mode=attacked_information_mode,
                 fraction=fraction,
             )
 

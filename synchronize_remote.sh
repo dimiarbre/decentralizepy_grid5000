@@ -5,6 +5,7 @@ if [[ "$remote" == "jean-zay" ]]; then
     --exclude '\\.*'\
     --exclude datasets\
     --exclude attacks/my_results\
+    --exclude assets\
     --exclude attacks/assets\
     --exclude attacks/datasets\
     --exclude 'venv*'\
@@ -20,6 +21,7 @@ elif [[ "$remote" == "rennes" || "$remote" == "nancy" ]]; then
     --exclude '\\.*' \
     --exclude 'datasets/' \
     --exclude 'attacks/my_results' \
+    --exclude assets\
     --exclude 'attacks/assets/' \
     --exclude 'attacks/datasets' \
     --exclude '*.sif' \

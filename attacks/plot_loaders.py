@@ -4,6 +4,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pandas._typing
 from load_experiments import read_ini, safe_load
 from localconfig import LocalConfig
 
@@ -250,8 +251,8 @@ def load_data(
     max_processes,
     machine_folder,
     result_file,
-    starting_iteration,
-    max_iteration,
+    starting_iteration=0,
+    max_iteration=-1,
 ):
     data = pd.DataFrame({})
     for machine in range(max_machines):
@@ -267,9 +268,32 @@ def load_data(
             tmp_df["iteration"] = tmp_df.index
             # print(tmp_df)
             tmp_df = tmp_df[tmp_df["iteration"] >= starting_iteration]
-            tmp_df = tmp_df[tmp_df["iteration"] <= max_iteration]
+            if max_iteration > 0:
+                tmp_df = tmp_df[tmp_df["iteration"] <= max_iteration]
             data = pd.concat([data, tmp_df])
     return data
+
+
+def safe_merge(
+    current_data: pd.DataFrame,
+    new_data: pd.DataFrame,
+    on: list[str],
+    how: pandas._typing.MergeHow,  # TODO: change this?
+):
+    if new_data.empty:
+        return current_data
+    filtered_merge = []
+    for attribute in on:
+        if attribute in current_data.columns:
+            filtered_merge.append(attribute)
+
+    merged = pd.merge(
+        current_data,
+        new_data,
+        on=filtered_merge,
+        how=how,
+    )
+    return merged
 
 
 def load_threshold_attack_results(current_experiment_data, experiment_dir):
@@ -291,7 +315,7 @@ def load_threshold_attack_results(current_experiment_data, experiment_dir):
     # print(current_experiment_data)
     # print(attacks_df)
 
-    res = pd.merge(
+    res = safe_merge(
         current_experiment_data, attacks_df, on=["uid", "iteration"], how="outer"
     )
     # print(res)
@@ -316,7 +340,7 @@ def load_linkability_attack_results(current_experiment_data, experiment_dir):
 
     linkability_attack_df = linkability_attack_df.drop(columns="Unnamed: 0")
 
-    return pd.merge(
+    return safe_merge(
         current_experiment_data,
         linkability_attack_df,
         on=["uid", "iteration", "target"],
@@ -344,7 +368,7 @@ def load_biasedthreshold_results(current_experiment_data, experiment_dir):
 
     biasedthreshold_attack_df = biasedthreshold_attack_df.drop(columns="Unnamed: 0")
 
-    merged = pd.merge(
+    merged = safe_merge(
         current_experiment_data,
         biasedthreshold_attack_df,
         on=["uid", "iteration", "target"],
@@ -377,7 +401,7 @@ def load_classifier_results(
             + f"{expected_file_name} was not listed with attack results in {experiment_dir}."
             + f"Entire directory:\n{directories}"
         )
-        return pd.DataFrame({})
+        return current_experiment_data
 
     classifier_attack_df = pd.read_csv(os.path.join(experiment_dir, expected_file_name))
 
@@ -386,6 +410,8 @@ def load_classifier_results(
             "agent": "uid",
             "roc_auc": "classifier_roc_auc",
             "attacker_model": "classifier_attacker_model",
+            "attacker_fraction": "classifier_attacker_fraction",
+            "attacked_information": "classifier_attacked_information",
         }
     )
 
@@ -397,7 +423,7 @@ def load_classifier_results(
     )
     classifier_attack_df = classifier_attack_df.drop(columns="Unnamed: 0")
 
-    merged = pd.merge(
+    merged = safe_merge(
         current_experiment_data,
         classifier_attack_df,
         on=["uid", "target"],
@@ -452,8 +478,8 @@ def fix_linkability_attack_results(experiment_name, attack_results_path):
 
 def load_data_element(
     experiment_dir,
-    starting_iteration,
-    max_iteration,
+    starting_iteration=0,
+    max_iteration=-1,
     machine_folder="machine{}",
     result_file="{}_results.json",
 ):
@@ -526,9 +552,9 @@ def get_full_path_dict(experiments_dir):
 
 
 def format_data(
-    data,
-    key,
-    columns_to_agg,
+    data: pd.DataFrame,
+    key: str,
+    columns_to_agg: list,
     linkability_aggregators,
     general_aggregator,
     total_processes,
@@ -536,10 +562,28 @@ def format_data(
     noise_mapping=NOISES_MAPPING,
     noise_mapping_log=NOISE_MAPPING_LOG,
 ):
+    group_attributes = ["iteration"]
+
+    additional_colums = []
+    additional_groups = []
+    for attribute in [
+        "classifier_attacked_information",
+        "classifier_attacker_model",
+        "classifier_attacker_fraction",
+    ]:
+        if attribute in data.columns:
+            if attribute not in columns_to_agg:
+                additional_colums.append(attribute)
+            if attribute not in group_attributes:
+                additional_groups.append(attribute)
+
     usable_data = data[
-        ["iteration"] + columns_to_agg + list(linkability_aggregators.keys())
+        ["iteration"]
+        + columns_to_agg
+        + additional_colums
+        + list(linkability_aggregators.keys())
     ]
-    grouped_data = usable_data.groupby(["iteration"])
+    grouped_data = usable_data.groupby(group_attributes + additional_groups)
     usable_data = grouped_data.agg(general_aggregator)
     usable_data.reset_index(inplace=True)
     usable_data.set_index("iteration", inplace=True)

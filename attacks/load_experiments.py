@@ -663,11 +663,6 @@ def list_models_path(
         f"{agent_id}",
     )
     if not os.path.isdir(agent_models_directory):
-        experiment_name = os.path.basename(experiment_path)
-        for attack in attacks:
-            assert os.path.exists(
-                os.path.join(experiment_path, f"{attack}_{experiment_name}.csv")
-            ), f"Models missing for {experiment_name} but the {attack} attack results are not there"
         return models_list
     for file in sorted(os.listdir(agent_models_directory)):
         file_attributes = get_model_attributes(file, agent_models_directory)
@@ -729,8 +724,11 @@ def get_all_experiments_properties(
             nb_machines=nb_machines,
             attacks=attacks,
         )
-        current_experiment_df["experiment_name"] = experiment_name
-        experiment_wide_df = pd.concat([experiment_wide_df, current_experiment_df])
+        if not current_experiment_df.empty:
+            current_experiment_df["experiment_name"] = experiment_name
+            experiment_wide_df = pd.concat([experiment_wide_df, current_experiment_df])
+        else:
+            print(f"Skipping {experiment_name} as no models were found.")
     experiment_wide_df = experiment_wide_df.astype(
         {"iteration": "int32", "agent": "int32", "target": "int32"}
     )

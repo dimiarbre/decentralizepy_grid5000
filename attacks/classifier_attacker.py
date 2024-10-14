@@ -555,6 +555,10 @@ def classifier_attack(
 
     all_res: ClassifierAttackDict = {}
     for attacker_dataset_mode, attacked_information_mode, fraction in configurations:
+        if debug:
+            print(
+                f"Running classifier attack {attacker_dataset_mode,attacked_information_mode,fraction}"
+            )
         # TODO: the first three calls here could be optimized
         # Duplicate mode are filtered multiple times. Nested loops would be fix this..
         # Since both operations are very quick (only index handling), I did not bother to do it.
@@ -835,7 +839,7 @@ def run_classifier_attack(
 
         already_computed_tuples = list(
             starting_results[
-                ["attacker_dataset", "attacked_information", "attacker_fraction"]
+                ["attacker_dataset_mode", "attacked_information", "attacker_fraction"]
             ]
             .drop_duplicates()
             .itertuples(index=False, name=None)
@@ -857,6 +861,9 @@ def run_classifier_attack(
             # We raise an error to avoid overriding existing results.
             raise RuntimeError("All classifier attack were computed.")
         configurations = filtered_configurations
+
+    if debug:
+        print(f"Final configurations to run: {configurations}")
 
     groups = models_properties.groupby("agent")
     all_results = starting_results

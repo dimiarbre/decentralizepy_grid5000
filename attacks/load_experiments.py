@@ -154,10 +154,10 @@ class PartitionerWrapper(DataPartitioner):
     """
 
     def __init__(self, data, sizes=None, seed=1234):
-        self.data = data
+        self.partitions = data
 
     def use(self, rank):
-        return self.data[rank]
+        return self.partitions[rank]
 
 
 def load_Femnist_Testset(femnist_test_dir):

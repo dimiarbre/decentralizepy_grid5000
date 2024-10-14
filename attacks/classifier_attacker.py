@@ -22,10 +22,14 @@ from sklearn.metrics import (
     roc_auc_score,
     roc_curve,
 )
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from tqdm import tqdm
 
+from decentralizepy.datasets.Partitioner import DataPartitioner
+
 Mode = Literal["all", "last"]
+AttackerDatasetMode = Literal["local", "global"]
+ClassifierAttackDict = dict[tuple[AttackerDatasetMode, Mode, float], tuple[tuple, list]]
 
 
 # TODO: replace this with the Data class? This seems to be essentially the same.
@@ -285,25 +289,25 @@ def update_data(
     device=torch.device("cpu"),
     debug=False,
 ):
-    losses, _, _ = load_experiments.generate_losses(
+    losses, classes, _ = load_experiments.generate_losses(
         model, dataset, loss_function=loss_function, device=device, debug=debug
     )
 
     # Remove nans
-    losses, _ = load_experiments.filter_nans(
+    losses, classes = load_experiments.filter_nans(
         losses,
-        classes=None,
+        classes=classes,
         debug_name="update_data",
         loss_type=type(loss_function),
     )
     if len(losses) == 0:
-        return current_data
+        return (current_data, None)
 
     losses = losses.unsqueeze(1)
     if current_data is None:
-        return losses
+        return (losses, classes)
     current_data = torch.cat((current_data, losses), dim=1)
-    return current_data
+    return (current_data, classes)
 
 
 def generate_time_series_dataset(
@@ -320,6 +324,7 @@ def generate_time_series_dataset(
     all_losses_agent = None
     # Sort so that we have a time series.
     agent_model_properties.sort_values("iteration", inplace=True)
+    previous_classes = None
     for _, line in agent_model_properties.iterrows():
         # Used to ensure everything is in the correct order.
         iteration = line["iteration"]
@@ -335,7 +340,7 @@ def generate_time_series_dataset(
             device=device,
         )
 
-        all_losses_agent = update_data(
+        all_losses_agent, classes = update_data(
             all_losses_agent,
             model=attacked_model,
             dataset=dataset,
@@ -343,12 +348,15 @@ def generate_time_series_dataset(
             device=device,
             debug=debug,
         )
+        if previous_classes is not None and classes is not None:
+            assert torch.equal(previous_classes, classes)
+        previous_classes = classes
     assert all_losses_agent is not None
     # Add a channel dimension that will be needed by the network. We only have 1 channel (the loss)
     all_losses_agent = all_losses_agent.unsqueeze(1)
     if debug:
         print(f"Generated losses of shape {all_losses_agent.shape}")
-    return all_losses_agent
+    return all_losses_agent, classes
 
 
 def split_data(dataset, nb_train, generator):
@@ -388,7 +396,12 @@ def generate_y_data(trainset, testset):
 
 
 def generate_attacker_dataset(
-    losses_trainset, losses_testset, fraction: float, batch_size=256, seed=421
+    losses_trainset,
+    losses_testset,
+    fraction: float,
+    batch_size=256,
+    seed=421,
+    debug=False,
 ):
     generator = torch.Generator()
     generator.manual_seed(seed)
@@ -399,10 +412,6 @@ def generate_attacker_dataset(
     nb_training_samples_from_test = floor(len(losses_testset) * fraction)
     testset_for_train, testset_for_test = split_data(
         losses_testset, nb_train=nb_training_samples_from_test, generator=generator
-    )
-
-    total_attacker_trainset_size = (
-        nb_training_samples_from_train + nb_training_samples_from_test
     )
 
     x_train = torch.utils.data.ConcatDataset((trainset_for_train, testset_for_train))
@@ -431,6 +440,12 @@ def generate_attacker_dataset(
         collate_fn=fast_collate,
     )
 
+    if debug:
+        print(
+            f"Local train size: {len(losses_trainset)}. Attacker (local?) test size: {len(losses_testset)}"
+        )
+        print(f"Attacker train size: {len(x_train)}. Attacker test size: {len(x_test)}")
+
     return dataloader_train, dataloader_test, weight
 
 
@@ -455,56 +470,116 @@ def classifier_attack(
     device,
     agent,
     attacker_model_initializer,
-    configurations: list[tuple[Mode, float]],
+    configurations: list[tuple[AttackerDatasetMode, Mode, float]],
     nb_epoch: int,
+    attacker_distribution,  # The distribution used for local attacks
     batch_size=256,
     lr=0.01,
     momentum=0.9,
     debug=False,
-):
+) -> ClassifierAttackDict:
     if debug:
         print(f"Generating train losses for {agent}")
-    losses_trainset_current_agent = generate_time_series_dataset(
-        trainset,
-        agent_model_properties,
-        attacked_model,
-        simulation_loss_function,
-        shapes_target,
-        lens_target,
-        device,
-        debug=debug,
+    losses_trainset_current_agent, classes_trainset_current_agent = (
+        generate_time_series_dataset(
+            trainset,
+            agent_model_properties,
+            attacked_model,
+            simulation_loss_function,
+            shapes_target,
+            lens_target,
+            device,
+            debug=debug,
+        )
     )
+    assert classes_trainset_current_agent is not None
 
     if debug:
         print(f"Generating test losses for {agent}")
-    losses_testset_current_agent = generate_time_series_dataset(
-        testset,
-        agent_model_properties,
-        attacked_model,
-        simulation_loss_function,
-        shapes_target,
-        lens_target,
-        device,
-        debug=debug,
+    losses_testset_current_agent, classes_testset_current_agent = (
+        generate_time_series_dataset(
+            testset,
+            agent_model_properties,
+            attacked_model,
+            simulation_loss_function,
+            shapes_target,
+            lens_target,
+            device,
+            debug=debug,
+        )
     )
+    assert classes_testset_current_agent is not None
 
-    all_res = {}
-    for attacked_information_mode, fraction in configurations:
+    unbalanced_sampled_test_losses = None
+    has_local = "local" in [x for x, _, _ in configurations]
+    if has_local:
+        # Filter testset to only contain labels of the classes in the train dataset
+        # TODO: This is not the correct dataset! This should be the attacker's dataset instead!!!
+        if debug:
+            # TODO:this is a bit of a weird typing. Change this to be int? But for movieLens, they are floats...
+            classes_distribution_trainset_current_agent: dict[float, int] = {}
+            for c in classes_trainset_current_agent:
+                value = float(c.item())  # Have to use float because of MovieLens
+                classes_distribution_trainset_current_agent[value] = (
+                    classes_distribution_trainset_current_agent.get(value, 0) + 1
+                )
+            print(
+                f"Local dataset distribution for the victim node: {classes_distribution_trainset_current_agent}\n"
+                f"Generating local dataset. Target distribution for the attacker: {attacker_distribution}"
+            )
+        labels_in_dataset = torch.tensor(list(attacker_distribution.keys()))
+        mask = torch.isin(classes_testset_current_agent, labels_in_dataset)
+        indices = torch.nonzero(mask).squeeze()
+
+        # The test loss we'll sample from for the attacks.
+        unbalanced_filtered_test_losses = losses_testset_current_agent[indices]
+        unbalanced_filtered_test_labels = classes_testset_current_agent[indices]
+
+        weights = [
+            attacker_distribution[label.item()]
+            for label in unbalanced_filtered_test_labels
+        ]
+
+        # Sample from the test set so that it matches the train distribution.
+        sampler = WeightedRandomSampler(
+            weights,
+            num_samples=min(  # We get the same number of samples on both side if possible.
+                len(losses_trainset_current_agent), len(losses_testset_current_agent)
+            ),
+            replacement=False,
+        )
+        sampled_indexes = torch.tensor(list(sampler), dtype=torch.int)
+        unbalanced_sampled_test_losses = unbalanced_filtered_test_losses[
+            sampled_indexes
+        ]
+
+    all_res: ClassifierAttackDict = {}
+    for attacker_dataset_mode, attacked_information_mode, fraction in configurations:
         # TODO: the first three calls here could be optimized
         # Duplicate mode are filtered multiple times. Nested loops would be fix this..
         # Since both operations are very quick (only index handling), I did not bother to do it.
         filtered_losses_trainset = filter_attacked_information(
             losses_trainset_current_agent, attacked_information_mode
         )
-        filtered_losses_testset = filter_attacked_information(
-            losses_testset_current_agent, attacked_information_mode
-        )
+        if attacker_dataset_mode == "global":
+            filtered_losses_testset = filter_attacked_information(
+                losses_testset_current_agent, attacked_information_mode
+            )
+        elif attacker_dataset_mode == "local":
+            assert unbalanced_sampled_test_losses is not None
+            filtered_losses_testset = filter_attacked_information(
+                unbalanced_sampled_test_losses, attacked_information_mode
+            )
+        else:
+            raise ValueError(f"Unknown attacker dataset mode {attacker_dataset_mode}")
+
         attacker_trainset, attacker_testset, weight = generate_attacker_dataset(
             filtered_losses_trainset,
             filtered_losses_testset,
             fraction=fraction,
             batch_size=batch_size,
             seed=421,  # TODO:change this so it can be specified?
+            debug=debug,
         )
 
         # This handles cases where there are Nans or invalid models.
@@ -523,7 +598,7 @@ def classifier_attack(
             print(f"{nb_params:,d} trainable parameters.")
 
         print(
-            f"Finished loading - Starting training node {agent} with config {attacked_information_mode, fraction}"
+            f"Finished loading - Starting training node {agent} with config {attacker_dataset_mode, attacked_information_mode, fraction}"
         )
         t0 = time.time()
         train_losses = train_classifier(
@@ -543,7 +618,10 @@ def classifier_attack(
         res = eval_classifier(
             attacker_model, attacker_testset, device=device, debug=debug
         )
-        all_res[(attacked_information_mode, fraction)] = (res, train_losses)
+        all_res[(attacker_dataset_mode, attacked_information_mode, fraction)] = (
+            res,
+            train_losses,
+        )
 
     return all_res
 
@@ -558,6 +636,7 @@ def generate_statistics_figure(
     roc_auc,
     accuracy,
     node_id,
+    attacker_dataset_mode,
     mode,
     fraction,
 ):
@@ -612,7 +691,7 @@ def generate_statistics_figure(
 
     fig_dir = os.path.join(
         experiment_dir,
-        f"classifier_attacker/mode{mode}_fraction{fraction}",
+        f"classifier_attacker/{attacker_dataset_mode}_mode{mode}_fraction{fraction}",
     )
     if not os.path.exists(fig_dir):
         os.makedirs(fig_dir)
@@ -656,10 +735,40 @@ def sample_specific_scores(
     return sampled_tpr
 
 
+def get_local_datasets_distributions(
+    trainset_partitioner: DataPartitioner,
+) -> dict[int, dict[int, int]]:
+    """Iterates over all datasets and generate their label distributions.
+    This is useful for classifier attack with only local information visible to the attacker.
+
+    Args:
+        trainset_partitioner (DataPartitioner): The trainset partitioner that allow to load all local datasets
+
+    Returns:
+        dict[int,dict[int,int]]: A mapping {label-> count} for each node, accessible through a dictionnary.
+    """
+    # Generate train dataset data distribution
+    nb_nodes = len(trainset_partitioner.partitions)
+    attacker_distributions = {}
+    for node in range(nb_nodes):
+        trainset_current_agent = trainset_partitioner.use(node)
+        current_node_distribution: dict[int, int] = {}
+        for _, y in trainset_current_agent:
+            if isinstance(y, torch.Tensor):
+                y_value = int(y.item())
+            else:
+                y_value = y
+            current_node_distribution[y_value] = (
+                current_node_distribution.get(y_value, 0) + 1
+            )
+        attacker_distributions[node] = current_node_distribution
+    return attacker_distributions
+
+
 def run_classifier_attack(
     models_properties: pd.DataFrame,
     experiment_dir,
-    trainset_partitioner,
+    trainset_partitioner: DataPartitioner,
     testset,
     simulation_loss_function,
     attacked_model,
@@ -669,7 +778,10 @@ def run_classifier_attack(
     batch_size,
     attacker_model_initializer=SimpleAttacker,
     fractions: Union[float, list[float]] = 0.7,
-    attacked_informations: Union[Mode, list[Mode]] = "all",
+    attack_modes: Union[Mode, list[Mode]] = "all",
+    attacker_dataset_mode: Union[
+        AttackerDatasetMode, list[AttackerDatasetMode]
+    ] = "global",
     starting_results=pd.DataFrame({}),
     nb_epoch=300,
     lr=0.01,
@@ -682,13 +794,23 @@ def run_classifier_attack(
         fractions = [fractions]
     assert isinstance(fractions, list)
 
-    if isinstance(attacked_informations, str):
-        attacked_informations = [attacked_informations]
-    assert isinstance(attacked_informations, list)
+    if isinstance(attack_modes, str):
+        attack_modes = [attack_modes]
+    assert isinstance(attack_modes, list)
 
-    configurations = list(itertools.product(attacked_informations, fractions))
+    if isinstance(attacker_dataset_mode, str):
+        attacker_dataset_mode = [attacker_dataset_mode]
+    assert isinstance(attacker_dataset_mode, list)
+
+    local_datasets_distributions = get_local_datasets_distributions(
+        trainset_partitioner
+    )
+
+    configurations = list(
+        itertools.product(attacker_dataset_mode, attack_modes, fractions)
+    )
     if not starting_results.empty:
-        # Check if some results were already computed, and if yes remove them.
+        # Check if some results were already computed, and if yes remove them.from the queue.
         filtered_configurations = []
 
         # Handle legacy code that did not log this, by using the default value at the time.
@@ -705,8 +827,16 @@ def run_classifier_attack(
             )
             starting_results["attacked_information"] = "all"
 
+        if "attacker_dataset" not in starting_results.columns:
+            print(
+                "Detected experiment without 'attacker_dataset' set, filling to 'global'."
+            )
+            starting_results["attacker_dataset"] = "global"
+
         already_computed_tuples = list(
-            starting_results[["attacked_information", "attacker_fraction"]]
+            starting_results[
+                ["attacker_dataset", "attacked_information", "attacker_fraction"]
+            ]
             .drop_duplicates()
             .itertuples(index=False, name=None)
         )
@@ -721,7 +851,7 @@ def run_classifier_attack(
         if not filtered_configurations:
             print(
                 f"Found no new thing to compute for classifier attack on {experiment_name}. "
-                + f"Modes: {attacked_informations}."
+                + f"Modes: {attack_modes}."
                 + f"Fractions: {fractions}."
             )
             # We raise an error to avoid overriding existing results.
@@ -737,6 +867,7 @@ def run_classifier_attack(
         assert (targets[0] == targets).all(), f"Not uniform targets {targets}"
         target = targets[0]
         trainset_local_node = trainset_partitioner.use(agent)
+
         trainset_local_node = DataLoader(
             trainset_local_node, batch_size=batch_size, shuffle=False
         )
@@ -753,12 +884,13 @@ def run_classifier_attack(
             attacker_model_initializer=attacker_model_initializer,
             configurations=configurations,
             nb_epoch=nb_epoch,
+            attacker_distribution=local_datasets_distributions[target],
             batch_size=batch_size,
             lr=lr,
             momentum=momentum,
             debug=debug,
         )
-        for (attacked_information_mode, fraction), (
+        for (attacker_dataset_mode, attacked_information_mode, fraction), (
             res,
             train_losses,
         ) in classifier_res.items():
@@ -795,6 +927,7 @@ def run_classifier_attack(
                 roc_auc=roc_auc,
                 accuracy=accuracy,
                 node_id=agent,
+                attacker_dataset_mode=attacker_dataset_mode,
                 mode=attacked_information_mode,
                 fraction=fraction,
             )
@@ -808,6 +941,7 @@ def run_classifier_attack(
             current_res["attacker_fraction"] = [
                 fraction
             ]  # The training fraction that was used for training the attacker model.
+            current_res["attacker_dataset_mode"] = [attacker_dataset_mode]
             current_res["attacked_information"] = [attacked_information_mode]
             for fpr_target, tpr_value in scores.items():
                 current_res[f"tpr_at_fpr{fpr_target}"] = tpr_value
@@ -899,7 +1033,7 @@ def main(dataset_name="CIFAR10"):
         batch_size=batch_size,
         attacker_model_initializer=model_type,
         fractions=fractions,
-        attacked_informations=attacked_informations,
+        attack_modes=attacked_informations,
         nb_epoch=nb_epoch,
         lr=lr,
         momentum=momentum,

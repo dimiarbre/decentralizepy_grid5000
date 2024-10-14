@@ -18,7 +18,12 @@ import pandas as pd
 import torch
 import torch.utils
 import torch.utils.data
-from classifier_attacker import Mode, SimpleAttacker, run_classifier_attack
+from classifier_attacker import (
+    AttackerDatasetMode,
+    Mode,
+    SimpleAttacker,
+    run_classifier_attack,
+)
 from LinkabilityAttack import LinkabilityAttack
 from load_experiments import (
     ALL_ATTACKS,
@@ -206,7 +211,15 @@ def attack_experiment(
 
     total_result = {}
     if attack_todo == "classifier":
-        fractions = [0.25, 0.5, 0.7]  # TODO: change this to a parameter?
+        # TODO: change this to a parameter?
+        # We discovered there is not much of a difference between 0.25 and 0.7
+        # So I'll just consider one of them for now, to divide by 3 the attack time.
+        # fractions = [0.25, 0.5, 0.7]
+        fractions = [0.7]  # Default value to reduce number of trainings.
+
+        attacker_information: list[AttackerDatasetMode] = ["global", "local"]
+        # attacker_information: list[AttackerDatasetMode] = ["local"]
+
         attack_modes: list[Mode] = ["all", "last"]
         total_result["classifier"] = run_classifier_attack(
             models_properties=current_experiment,
@@ -222,7 +235,8 @@ def attack_experiment(
             attacker_model_initializer=SimpleAttacker,
             debug=debug,
             fractions=fractions,
-            attacked_informations=attack_modes,
+            attack_modes=attack_modes,
+            attacker_dataset_mode=attacker_information,
             starting_results=starting_results,
         )
         save_results(

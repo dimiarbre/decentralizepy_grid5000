@@ -827,11 +827,11 @@ def run_classifier_attack(
             )
             starting_results["attacked_information"] = "all"
 
-        if "attacker_dataset" not in starting_results.columns:
+        if "attacker_dataset_mode" not in starting_results.columns:
             print(
                 "Detected experiment without 'attacker_dataset' set, filling to 'global'."
             )
-            starting_results["attacker_dataset"] = "global"
+            starting_results["attacker_dataset_mode"] = "global"
 
         already_computed_tuples = list(
             starting_results[

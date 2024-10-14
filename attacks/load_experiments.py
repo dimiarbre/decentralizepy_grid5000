@@ -699,25 +699,35 @@ def get_all_models_properties(
     return models_df
 
 
-def get_all_experiments_properties(
-    all_experiments_dir: str, nb_agents: int, nb_machines: int, attacks
-) -> pd.DataFrame:
+def get_all_experiments_properties(all_experiments_dir: str, attacks) -> pd.DataFrame:
     """Generates a dataframe with all models path and properties (agent, iteration, target agent)
     for all the experiments in a folder.
 
     Args:
         all_experiments_dir (str): The path to the experiments
-        nb_agents (int): The total number of agent for the experiments
-        nb_machines (int): The total number of machines for the experiments
 
     Returns:
         pd.Dataframe: A dataframe containing a column for the model file,
             the iteration, the agent uid and the target agent uid, unified for all the experiments.
     """
     experiment_wide_df = pd.DataFrame({})
-
+    nb_agents = None
     for experiment_name in os.listdir(all_experiments_dir):
         experiment_path = os.path.join(all_experiments_dir, experiment_name)
+
+        # Fetch information from the config file automatically.
+        g5k_config_file = os.path.join(experiment_path, "g5k_config.json")
+        assert os.path.exists(
+            g5k_config_file
+        ), f"Cannot find g5k config file at {g5k_config_file}"
+        with open(g5k_config_file, "r") as f:
+            g5k_config = json.load(f)
+        if nb_agents is not None:
+            assert (
+                nb_agents == g5k_config["NB_AGENTS"]
+            ), f"Inconsistent number of agents: {nb_agents} and {g5k_config['NB_AGENTS']}"
+        nb_agents = g5k_config["NB_AGENTS"]
+        nb_machines = g5k_config["NB_MACHINE"]
         current_experiment_df = get_all_models_properties(
             experiment_path,
             nb_agents=nb_agents,
@@ -770,9 +780,7 @@ def main():
     experiments_dir = "attacks/my_results/movielens/"
 
     t0 = time.time()
-    all_experiments_df = get_all_experiments_properties(
-        experiments_dir, nb_agents, nb_machines, ALL_ATTACKS
-    )
+    all_experiments_df = get_all_experiments_properties(experiments_dir, ALL_ATTACKS)
     t1 = time.time()
     print(all_experiments_df)
     print(f"All models paths retrieved in {t1-t0:.2f}s")

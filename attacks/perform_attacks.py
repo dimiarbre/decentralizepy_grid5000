@@ -3,6 +3,7 @@ import concurrent.futures
 import copy
 import functools
 import heapq
+import json
 import multiprocessing
 import os
 import shutil
@@ -92,7 +93,6 @@ def attack_experiment(
     experiment_df,
     experiment_name: str,
     batch_size: int,
-    nb_agents: int,
     experiment_path: str,
     datasets_dir: str,
     device_type: str = "cpu",
@@ -103,6 +103,15 @@ def attack_experiment(
     config_file = os.path.join(experiment_path, "config.ini")
     assert os.path.exists(config_file), f"Cannot find config file at {config_file}"
     config = load_experiments.read_ini(config_file)
+
+    g5k_config_file = os.path.join(experiment_path, "g5k_config.json")
+    assert os.path.exists(
+        g5k_config_file
+    ), f"Cannot find g5k config file at {g5k_config_file}"
+    with open(g5k_config_file, "r") as f:
+        g5k_config = json.load(f)
+
+    nb_agents = g5k_config["NB_AGENTS"]
 
     dataset = config.dataset.dataset_class
     nb_classes = POSSIBLE_DATASETS[dataset][1]
@@ -445,8 +454,6 @@ def main(
     should_clear,
     nb_processes=10,
     batch_size=256,
-    nb_agents=128,
-    nb_machines=8,
     attacks=ALL_ATTACKS,
 ):
     device_type = "cuda:0"  # TODO: change this to ensure it is available?
@@ -462,7 +469,7 @@ def main(
 
     print("Loading experiments dirs")
     all_experiments_df = load_experiments.get_all_experiments_properties(
-        experiments_dir, nb_agents, nb_machines, attacks
+        experiments_dir, attacks
     )
 
     # When debugging, save the dataframe and load it to avoid cold starts.
@@ -492,7 +499,6 @@ def main(
                         copy.deepcopy(all_experiments_df),
                         experiment_name=copy.deepcopy(experiment_name),
                         batch_size=copy.deepcopy(batch_size),
-                        nb_agents=copy.deepcopy(nb_agents),
                         experiment_path=os.path.join(experiments_dir, experiment_name),
                         datasets_dir=copy.deepcopy(datasets_dir),
                         device_type=copy.deepcopy(device_type),
@@ -508,7 +514,6 @@ def main(
                         copy.deepcopy(all_experiments_df),
                         experiment_name=copy.deepcopy(experiment_name),
                         batch_size=copy.deepcopy(batch_size),
-                        nb_agents=copy.deepcopy(nb_agents),
                         experiment_path=os.path.join(experiments_dir, experiment_name),
                         datasets_dir=copy.deepcopy(datasets_dir),
                         device_type=copy.deepcopy(device_type),
@@ -541,7 +546,7 @@ if __name__ == "__main__":
         "experiment_dir",
         type=str,
         default="attacks/my_results/test/testing_femnist_convergence_rates/",
-        help="Path to the experiment directory",
+        help="Path to the experiments directory. It should be a directory with only subdirectories, with each subdirectory corresponding to an experiment.",
     )
 
     parser.add_argument(
@@ -562,6 +567,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--clear", action="store_true", help="Whether to clear something"
     )
+
     parser.add_argument(
         "--batch_size",
         type=int,
@@ -575,19 +581,6 @@ if __name__ == "__main__":
         help="Run in debug mode. Adds some printing.",
     )
 
-    parser.add_argument(
-        "--nb_agents",
-        type=int,
-        default=128,
-        help="Number of simulated nodes in these attacks. Default 128.",
-    )
-    parser.add_argument(
-        "--nb_machines",
-        type=int,
-        default=8,
-        help="Number of physical machines used for the attacks. Default 8.",
-    )
-
     args = parser.parse_args()
 
     EXPERIMENT_DIR = args.experiment_dir
@@ -596,8 +589,6 @@ if __name__ == "__main__":
     SHOULD_CLEAR = args.clear
     BATCH_SIZE = args.batch_size
     DEBUG = args.debug
-    NB_AGENTS = args.nb_agents
-    NB_MACHINES = args.nb_machines
     ALL_ATTACKS = ["classifier", "linkability", "threshold+biasedthreshold"]
 
     main(
@@ -606,7 +597,5 @@ if __name__ == "__main__":
         should_clear=SHOULD_CLEAR,
         nb_processes=NB_WORKERS,
         batch_size=BATCH_SIZE,
-        nb_agents=NB_AGENTS,
-        nb_machines=NB_MACHINES,
         attacks=ALL_ATTACKS,
     )

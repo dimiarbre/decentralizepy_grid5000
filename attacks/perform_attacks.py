@@ -282,6 +282,7 @@ def attack_experiment(
                 )
         else:
             roc_plotter_unbalanced = None
+            roc_plotter_balanced = None
         current_agent_experiments = current_experiment[
             current_experiment["agent"] == agent
         ]

@@ -248,6 +248,8 @@ def launch_experiment(g5k_config, decentralizepy_config: str, debug, is_remote):
 
     hostname_results = en.run_command("hostname -I| awk '{print $1;}'", roles=roles)
 
+    # TODO: create a json, and convert to string afterwards,
+    # instead of this janky json file generation.
     ip_file_content = "{"
 
     for id_machine, result in enumerate(hostname_results):

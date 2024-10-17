@@ -229,7 +229,8 @@ def attack_experiment(
         attacker_information: list[AttackerDatasetMode] = ["global", "local"]
         # attacker_information: list[AttackerDatasetMode] = ["local"]
 
-        attack_modes: list[Mode] = ["all", "last"]
+        attack_modes: list[Mode] = ["all", "last", "first", "middle"]
+        # attack_modes: list[Mode] = ["first"]
         total_result["classifier"] = run_classifier_attack(
             models_properties=current_experiment,
             experiment_dir=experiment_path,

@@ -27,7 +27,7 @@ from tqdm import tqdm
 
 from decentralizepy.datasets.Partitioner import DataPartitioner
 
-Mode = Literal["all", "last"]
+Mode = Literal["all", "last", "first", "middle"]
 AttackerDatasetMode = Literal["local", "global"]
 ClassifierAttackDict = dict[tuple[AttackerDatasetMode, Mode, float], tuple[tuple, list]]
 
@@ -108,7 +108,7 @@ class FCNAttacker(nn.Module):
     """Classifier used "Efficient passive membership inference attack in federated learning".
     See https://arxiv.org/abs/2111.00430.
     Parameters (kernel size and other) obtained after discussion with the author.
-    NB: the authors seems to have lost access to the code.
+    NB: the authors seems to have lost access to the code, so there may be differences.
     """
 
     def __init__(self, nb_in=None):
@@ -330,7 +330,7 @@ def generate_time_series_dataset(
         iteration = line["iteration"]
 
         # Load the model of node agent at iteration iteration
-        # TODO: loading time could be reduced by doing both trainset and testset losses at the same time,
+        # TODO: loading time could be reduced by doing both trainset and testset in this function concurrently,
         # do it if such a level of optimisation is necessary.
         load_experiments.load_model_from_path(
             line["file"],
@@ -351,7 +351,9 @@ def generate_time_series_dataset(
         if previous_classes is not None and classes is not None:
             assert torch.equal(previous_classes, classes)
         previous_classes = classes
-    assert all_losses_agent is not None
+    if all_losses_agent is None:
+        print("WARNING: All losses of a node are stricly NaNs!")
+        return None, None
     # Add a channel dimension that will be needed by the network. We only have 1 channel (the loss)
     all_losses_agent = all_losses_agent.unsqueeze(1)
     if debug:
@@ -454,6 +456,11 @@ def filter_attacked_information(losses: torch.Tensor, mode: Mode):
         return losses
     elif mode == "last":
         return losses[:, :, -5:]
+    elif mode == "first":
+        return losses[:, :, :5]
+    elif mode == "middle":
+        middle = losses.size(2) // 2  # Find the middle index
+        return losses[:, :, middle - 2 : middle + 3]  # Get 5 middle elements
 
     else:
         raise ValueError(f"Unexpected filter mode {mode}.")
@@ -492,6 +499,9 @@ def classifier_attack(
             debug=debug,
         )
     )
+    if losses_trainset_current_agent is None:
+        print(f"{agent} had Nans losses. Not computing classifier attack")
+        return {}
     assert classes_trainset_current_agent is not None
 
     if debug:
@@ -508,6 +518,9 @@ def classifier_attack(
             debug=debug,
         )
     )
+    if losses_testset_current_agent is None:
+        print(f"{agent} had Nans losses. Not computing classifier attack")
+        return {}
     assert classes_testset_current_agent is not None
 
     unbalanced_sampled_test_losses = None
@@ -897,6 +910,8 @@ def run_classifier_attack(
             momentum=momentum,
             debug=debug,
         )
+        # This result may be an empty dict, in which case the following loop should not be invoked,
+        # and following attacks on next nodes should still be computed.
         for (attacker_dataset_mode, attacked_information_mode, fraction), (
             res,
             train_losses,

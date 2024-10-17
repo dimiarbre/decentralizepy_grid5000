@@ -1,18 +1,46 @@
+import itertools
 import json
 import os
+from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pandas._typing
+from classifier_attacker import AttackerDatasetMode, Mode
 from load_experiments import read_ini, safe_load
 from localconfig import LocalConfig
+
+# Called in format_data().
+# Describes data that should be common to the entire experiment, and that should avoid the groupby iterations.
+# If an attribute is missing in the formatted data, it most likely is because it is not in this variable.
+EXPERIMENT_WIDE_ATTRIBUTES = [
+    "lr",
+    "local_rounds",
+    "model",
+    "seed",
+    "batch_size",
+    "number_agents",
+    "avgsteps",
+    "noise_level",
+    "variant",
+    "additional_attribute",
+    "topology_type",
+]
 
 ATTRIBUTE_DICT = {
     "network_size": ["128nodes"],
     "topology_type": ["static", "dynamic"],
     "variant": ["nonoise", "muffliato", "zerosum"],
-    "avgsteps": ["20avgsteps", "15avgsteps", "10avgsteps", "5avgsteps", "1avgsteps"],
+    "avgsteps": [
+        "20avgsteps",
+        "15avgsteps",
+        "10avgsteps",
+        "5avgsteps",
+        "3avgsteps",
+        "2avgsteps",
+        "1avgsteps",
+    ],
     "additional_attribute": ["selfnoise", "noselfnoise", "nonoise", "muffliato"],
     "noise_level": [
         "nonoise",
@@ -210,7 +238,17 @@ def plot_evolution_iterations(
     )
 
 
-def get_attributes_columns(name, display_attributes, data_to_plot, orderings):
+def filter_order(order, data_series: pd.Series) -> Optional[list]:
+    values = (
+        data_series.unique().tolist()
+    )  # Convert to list to avoid dtypes issues when doing "x in values"
+    if order is not None:
+        return [x for x in order if x in values]
+    else:
+        return None
+
+
+def _get_attributes_columns(name, display_attributes, data_to_plot, orderings):
     if name in display_attributes:
         column_labels = display_attributes[name]
         if isinstance(column_labels, list):
@@ -220,6 +258,49 @@ def get_attributes_columns(name, display_attributes, data_to_plot, orderings):
                 return column_labels, orderings[column_labels]
             return column_labels, None
     return None, None
+
+
+def get_attributes_columns(
+    name, display_attributes, data_to_plot, orderings
+) -> tuple[Optional[Union[str, list[str]]], Optional[list]]:
+    labels, order = _get_attributes_columns(
+        name, display_attributes, data_to_plot, orderings
+    )
+    if labels is None or name not in display_attributes:
+        return labels, order
+
+    attributes = display_attributes[name]
+
+    if isinstance(attributes, str) or len(attributes) == 1:
+        data_to_plot[attributes] = data_to_plot[labels].astype("category")
+
+        return labels, filter_order(order, data_to_plot[attributes])
+
+    assert isinstance(attributes, list)
+    for attr in attributes:
+        if attr not in orderings:
+            print(
+                f"Could not generated tuple ordering because {attr} is not in ordering.\n"
+                f"Full ordering{orderings}"
+            )
+    possible_values = [orderings[attr] for attr in attributes]
+    combinations = list(itertools.product(*possible_values))
+
+    def get_value(value_tuple):
+        return tuple(
+            orderings[attr].index(x) for x, attr in zip(value_tuple, attributes)
+        )
+
+    combinations.sort(key=get_value)
+
+    filtered_order = filter_order(
+        combinations,
+        data_to_plot[attributes].apply(
+            tuple, axis=1
+        ),  # We convert the examples to a series of tuple to match filter_order.
+    )
+
+    return labels, filtered_order
 
 
 def select_attributes_to_keep(display_attributes, x_axis_name) -> list[str]:
@@ -412,6 +493,7 @@ def load_classifier_results(
             "attacker_model": "classifier_attacker_model",
             "attacker_fraction": "classifier_attacker_fraction",
             "attacked_information": "classifier_attacked_information",
+            "attacker_dataset_mode": "classifier_attacker_dataset_mode",
         }
     )
 
@@ -494,8 +576,10 @@ def load_data_element(
     print(f"Loading config file {decentralizepy_config_file}")
     decentralizepy_config = read_ini(decentralizepy_config_file, False)
 
+    avg_steps = int(g5k_config["AVERAGING_STEPS"])
     nb_machine = g5k_config["NB_MACHINE"]
-    max_processes = int(g5k_config["NB_AGENTS"] / nb_machine)
+    nb_agents = g5k_config["NB_AGENTS"]
+    max_processes = int(nb_agents / nb_machine)
 
     print(f"Loading data from {name}")
     current_results = load_data(
@@ -512,6 +596,8 @@ def load_data_element(
     current_results = load_biasedthreshold_results(current_results, experiment_dir)
     current_results = load_classifier_results(current_results, experiment_dir)
     # input_dict[name] = current_results
+    # Most attributes are stored in the experiment name
+    # TODO: Remove this unnecessary behavior: it's much safer to load from the config files.
     attributes = get_attributes(name)
     for attribute, attribute_value in attributes.items():
         current_results[attribute] = attribute_value
@@ -532,6 +618,9 @@ def load_data_element(
         decentralizepy_config, "TRAIN_PARAMS", "batch_size", int
     )
 
+    # We load some attributes directly from the config instead of the experiment name.
+    current_results["number_agents"] = nb_agents
+    current_results["avgsteps"] = avg_steps
     print(f"Finished loading data from {name}")
     return current_results
 
@@ -551,13 +640,66 @@ def get_full_path_dict(experiments_dir):
     return full_path_dict
 
 
+def filter_classifier(
+    data: dict[str, pd.DataFrame],
+    attacked_information: Mode,
+    attacker_model: str,
+    attacker_fraction: float = 0.7,
+    attacker_dataset_mode: AttackerDatasetMode = "global",
+) -> dict[str, pd.DataFrame]:
+    """
+    Filters classifier experiment data based on specified criteria.
+
+    This function takes a dictionary of experiment data and filters it
+    according to the specified attacked information, attacker model,
+    and attacker fraction. It returns a new dictionary containing only
+    the data that meets these criteria.
+
+    Parameters:
+        data (dict[str, pd.DataFrame]): A dictionary of DataFrames where keys are experiment names.
+        attacked_information (Mode): Which model information the attacker had access to ("all","last","first",...)
+        attacker_model (str): The model used by the attacker.
+        attacker_fraction (float, optional): The fraction of the attacker. Defaults to 0.7.
+        attacker_dataset_mode (classifier_attacker.AttackerDatasetMode): The attacker dataset mode.
+
+    Returns:
+        dict[str, pd.DataFrame]: A dictionary containing filtered DataFrames for each experiment
+        that meet the specified criteria.
+    """
+    new_data = {}
+    for name, experiment_data in data.items():
+        # TODO: Automatize this. Share an attribute list with `format_data`?
+        # As well as the dictionnary in `load_classifier_result`.
+        # At least, attributes should match to what is done in `format_data`.
+        try:
+            current_exp_data = experiment_data[
+                experiment_data["classifier_attacked_information"]
+                == attacked_information
+            ]
+            current_exp_data = current_exp_data[
+                current_exp_data["classifier_attacker_model"] == attacker_model
+            ]
+            current_exp_data = current_exp_data[
+                current_exp_data["classifier_attacker_fraction"] == attacker_fraction
+            ]
+            current_exp_data = current_exp_data[
+                current_exp_data["classifier_attacker_dataset_mode"]
+                == attacker_dataset_mode
+            ]
+            new_data[name] = current_exp_data
+        except KeyError as e:
+            print(f"Got error {e}, skipping data.")
+            new_data[name] = pd.DataFrame({})
+
+    return new_data
+
+
 def format_data(
     data: pd.DataFrame,
     key: str,
     columns_to_agg: list,
     linkability_aggregators,
     general_aggregator,
-    total_processes,
     to_start_avg,
     noise_mapping=NOISES_MAPPING,
     noise_mapping_log=NOISE_MAPPING_LOG,
@@ -570,6 +712,7 @@ def format_data(
         "classifier_attacked_information",
         "classifier_attacker_model",
         "classifier_attacker_fraction",
+        "classifier_attacker_dataset_mode",
     ]:
         if attribute in data.columns:
             if attribute not in columns_to_agg:
@@ -577,29 +720,37 @@ def format_data(
             if attribute not in group_attributes:
                 additional_groups.append(attribute)
 
-    usable_data = data[
+    full_columns = (
         ["iteration"]
         + columns_to_agg
         + additional_colums
         + list(linkability_aggregators.keys())
-    ]
+    )
+
+    try:
+        usable_data = data[full_columns]
+    except KeyError as e:
+        print(f"Got error {e} when loading the data, skipping!")
+        dummy_df = pd.DataFrame(columns=full_columns)
+        return dummy_df
     grouped_data = usable_data.groupby(group_attributes + additional_groups)
     usable_data = grouped_data.agg(general_aggregator)
     usable_data.reset_index(inplace=True)
     usable_data.set_index("iteration", inplace=True)
 
     usable_data.insert(1, "experience_name", key)
-    usable_data.insert(2, "number_agents", total_processes)
+    # usable_data.insert(2, "number_agents", total_processes)
 
     usable_data.columns = [
         " ".join(e) if len(e[-1]) > 0 else e[0] for e in usable_data.columns
     ]
 
-    experiment_attributes = get_attributes(key)
-    for attribute, attribute_value in experiment_attributes.items():
-        usable_data[attribute] = attribute_value
+    # experiment_attributes = get_attributes(key)
+    # for attribute, attribute_value in experiment_attributes.items():
+    #     usable_data[attribute] = attribute_value
 
-    for attribute in ["lr", "local_rounds", "model", "seed", "batch_size"]:
+    # Reset global attributes that should be the same for all points in an experiment.
+    for attribute in EXPERIMENT_WIDE_ATTRIBUTES:
         assert (
             data[attribute].nunique() == 1
         ), f"{attribute} had multiple values when it shouldn't"
@@ -618,6 +769,9 @@ def format_data(
     usable_data["log_noise"] = usable_data["noise_level"].apply(
         lambda x: noise_mapping_log[x]
     )
+
+    usable_data["communication_step"] = usable_data.index * usable_data["avgsteps"]
+
     return usable_data
 
 

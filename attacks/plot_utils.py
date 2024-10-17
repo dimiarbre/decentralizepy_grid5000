@@ -1,19 +1,22 @@
 import os
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plot_loaders
+import scienceplots
 import seaborn as sns
+
+# plt.style.use(["science"])
 
 # Attributes that will always be needed to export for the pgfplots.
 EXPORT_ATTRIBUTES = ["noise_level_value", "log_noise", "variant"]
 
 ATTRIBUTE_DICT = {
-    "network_size": ["128nodes"],
     "topology_type": ["static", "dynamic"],
     "variant": ["nonoise", "muffliato", "zerosum"],
-    "avgsteps": ["20avgsteps", "15avgsteps", "10avgsteps", "5avgsteps", "1avgsteps"],
+    # "avgsteps": ["20avgsteps", "15avgsteps", "10avgsteps", "5avgsteps", "1avgsteps"],
     "additional_attribute": ["selfnoise", "noselfnoise", "nonoise", "muffliato"],
     "noise_level": [
         "nonoise",
@@ -209,32 +212,107 @@ def all_equals(l):
     return True
 
 
+def gather_data(
+    data: dict[str, pd.DataFrame],
+    experiments: list[str],
+    column_name: str,
+    attributes_to_keep: list[str],
+    save_directory: Optional[str],
+) -> pd.DataFrame:
+    """
+    Gathers and processes experiment data for plotting.
+
+    This function extracts specified columns from multiple experiments,
+    drops any rows with missing values, and saves the resulting data to
+    CSV files. It checks for the uniqueness of specified attributes across
+    experiments and provides feedback if any experiment results are empty.
+
+    Parameters:
+        data (dict[str, pd.DataFrame]): A dictionary of DataFrames where keys are experiment names.
+        experiments (list[str]): A list of experiment names to process.
+        column_name (str): The name of the primary column to extract.
+        attributes_to_keep (list[str]): A list of additional attributes to keep.
+        save_directory (str): The directory path where CSV files will be saved.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the concatenated results
+        from all processed experiments, with duplicate rows removed.
+    """
+    data_to_plot = pd.DataFrame({})
+
+    for experiment in experiments:
+        data_experiment_before_dropna = data[experiment][
+            [column_name] + attributes_to_keep
+        ]
+        data_experiment = data_experiment_before_dropna.dropna()
+        data_experiment = data_experiment.drop_duplicates()
+        if data_experiment.empty:
+            print(
+                f"Found empty results for {experiment}. Experiment state: {data_experiment_before_dropna}."
+            )
+            _ = input("Input anything to resume.")
+
+        experiment_attributes = {}
+        # TODO: Avoid hardcoding this list.
+        for attribute in ["variant", "noise_level", "avgsteps"]:
+            assert (
+                data_experiment[attribute].nunique() <= 1
+            ), f"Multiple value found for {attribute} for experiment {experiment}."
+            experiment_attributes[attribute] = data_experiment[attribute].iloc[0]
+        # TODO: change this to a more sane filename? using, for instance, plot_loaders.EXPERIMENT_WIDE_ATTRIBUTES?
+        if save_directory is not None:
+            filename = f"{experiment_attributes['variant']}{experiment_attributes['noise_level']}_{experiment_attributes['avgsteps']}avgsteps"
+            data_experiment.to_csv(
+                f"{save_directory}plot_data/entire_experiment_data/{filename}.csv"
+            )
+        data_to_plot = pd.concat([data_to_plot, data_experiment])
+    return data_to_plot
+
+
 def plot_all_experiments(
     data: dict[str, pd.DataFrame],
     experiments,
     display_attributes,
     plot_name,
+    x_axis="iteration",
     column_name="test_acc mean",
     save_directory=None,
     orderings=None,
+    baseline: Optional[dict[str, pd.DataFrame]] = None,
 ):
     attributes_to_keep = plot_loaders.select_attributes_to_keep(
-        display_attributes, "iteration"
+        display_attributes, x_axis
     )
     attributes_to_keep = extend_attributes_for_plot(attributes_to_keep)
-    data_to_plot = pd.DataFrame({})
-    for experiment in experiments:
-        data_experiment = data[experiment][[column_name] + attributes_to_keep]
-        data_experiment = data_experiment.dropna()
 
-        experiment_attributes = plot_loaders.get_attributes(experiment)
-        filename = f"{experiment_attributes['variant']}{experiment_attributes['noise_level']}_{experiment_attributes['avgsteps']}"
-        data_experiment.to_csv(
-            f"{save_directory}plot_data/entire_experiment_data/{filename}.csv"
+    data_to_plot = gather_data(
+        data, experiments, column_name, attributes_to_keep, save_directory
+    )
+
+    col, col_ordering = plot_loaders.get_attributes_columns(
+        "col", display_attributes, data_to_plot, orderings
+    )
+
+    # Dupplicate the baseline along the column
+    # TODO: do the same trick along rows if they start being used.
+    if baseline is not None and "col" in display_attributes:
+        col_attribute = display_attributes["col"]
+        col_levels = data_to_plot[col_attribute].unique()
+
+        data_baseline = gather_data(
+            baseline,
+            list(baseline.keys()),
+            column_name,
+            attributes_to_keep,
+            save_directory,
         )
-        data_to_plot = pd.concat([data_to_plot, data_experiment])
+        baseline_replicated = pd.DataFrame({})
+        for col_level in col_levels:
+            current_baseline = data_baseline.copy()
+            current_baseline[col_attribute] = col_level
+            baseline_replicated = pd.concat([baseline_replicated, current_baseline])
+        data_to_plot = pd.concat([data_to_plot, baseline_replicated])
 
-    sns.set_theme()
     hue, hue_ordering = plot_loaders.get_attributes_columns(
         "hue", display_attributes, data_to_plot, orderings
     )
@@ -244,14 +322,11 @@ def plot_all_experiments(
     size, size_ordering = plot_loaders.get_attributes_columns(
         "size", display_attributes, data_to_plot, orderings
     )
-    col, col_ordering = plot_loaders.get_attributes_columns(
-        "col", display_attributes, data_to_plot, orderings
-    )
 
     plot = sns.relplot(
         data=data_to_plot,
         kind="line",
-        x="iteration",
+        x=x_axis,
         y=column_name,
         hue=hue,
         hue_order=hue_ordering,
@@ -292,7 +367,7 @@ def plot_all_experiments(
         savefile = f"{save_directory}{filename}.pdf"
         print(f"Saving to {savefile}")
         plt.savefig(savefile)
-    return
+    return plot
 
 
 def scatter_all_experiments(
@@ -313,8 +388,14 @@ def scatter_all_experiments(
         data_experiment = data[experiment][[column_name] + attributes_to_keep]
         data_experiment = data_experiment.dropna()
         data_to_plot = pd.concat([data_to_plot, data_experiment])
-
-    sns.set_theme()
+    data_to_plot = gather_data(
+        data=data,
+        experiments=experiments,
+        column_name=column_name,
+        attributes_to_keep=attributes_to_keep,
+        save_directory=save_directory,
+    )
+    # sns.set_theme()
     hue, hue_ordering = plot_loaders.get_attributes_columns(
         "hue", display_attributes, data_to_plot, orderings
     )
@@ -373,8 +454,8 @@ def draw_arrow(ax, xmin, xmax, ymin, ymax, arrow_ratio):
 
 
 def scatter_averaged_experiments(
-    data,
-    experiments,
+    data: dict[str, pd.DataFrame],
+    experiments: list[str],
     display_attributes,
     plot_name,
     y_axis_name="test_acc mean",
@@ -398,11 +479,23 @@ def scatter_averaged_experiments(
     attributes_to_keep = extend_attributes_for_plot(attributes_to_keep)
     attributes_to_keep.remove(x_axis_name)
     for experiment in sorted(experiments):
-        experiment_data = data[experiment]
+        experiment_data: pd.DataFrame = data[experiment]
+        if experiment_data.empty:
+            print(f"Got empty data for {experiment}, probably filtered beforehand.")
+            continue
 
         experiment_data = experiment_data[
             [x_axis_name, y_axis_name, "experience_name"] + attributes_to_keep
         ]
+        experiment_data = experiment_data.drop_duplicates()
+        if experiment_data.index.duplicated().any():
+            raise ValueError(
+                f"Got duplicate indexes after filtering {experiment}- consider filtering by attack results (classifier_attack properties)"
+            )
+        if experiment_data.empty:
+            raise ValueError(
+                f"Got empty experiment data for {experiment}. Check the desired columns."
+            )
         # experiment_data = experiment_data.dropna()
 
         # For debugging purposes
@@ -410,9 +503,11 @@ def scatter_averaged_experiments(
         max_aggregated_loss = experiment_data[y_axis_name].max()
 
         experiment_data = experiment_data.sort_values("iteration")
-        max_y = experiment_data[y_axis_name].idxmax()
-        max_y_value = experiment_data[y_axis_name].loc[max_y]
-        assert max_y_value == max_aggregated_loss
+        matching_max = experiment_data[
+            experiment_data[y_axis_name] == max_aggregated_loss
+        ]
+
+        max_y = matching_max.index[0]
         x_mean_to_max_y = experiment_data[x_axis_name].loc[0:max_y].mean()
 
         experiment_data[top_acc_axis_name] = x_mean_to_max_y
@@ -439,7 +534,7 @@ def scatter_averaged_experiments(
     core_data = data_to_plot[["noise_level_value", "variant", true_x_axis, true_y_axis]]
     core_data = core_data[core_data["variant"] == "zerosum"]
 
-    sns.set_theme()
+    # sns.set_theme()
     hue, hue_ordering = plot_loaders.get_attributes_columns(
         "hue", display_attributes, data_to_plot, orderings
     )

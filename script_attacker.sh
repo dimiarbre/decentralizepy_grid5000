@@ -7,7 +7,7 @@ EXPERIMENT_DIR=""
 
 # Usage function to show how to use the script
 usage() {
-    echo "Usage: $0 --experiment_dir <EXPERIMENT_DIR> --nb_workers <NB_WORKERS> --batch_size <BATCH_SIZE> --nb_agents <NB_AGENTS> --nb_machines <NB_MACHINES>"
+    echo "Usage: $0 --experiment_dir <EXPERIMENT_DIR> --nb_workers <NB_WORKERS> --batch_size <BATCH_SIZE>"
     exit 1
 }
 
@@ -17,8 +17,6 @@ while [[ "$#" -gt 0 ]]; do
         --experiment_dir) EXPERIMENT_DIR="$2"; shift ;;
         --nb_workers) NB_WORKERS="$2"; shift ;;
         --batch_size) BATCH_SIZE="$2"; shift ;;
-        --nb_agents) NB_AGENTS="$2"; shift ;;
-        --nb_machines) NB_MACHINES="$2"; shift ;;
         -h|--help) usage ;;
         *) echo "Unknown parameter: $1"; usage ;;
     esac
@@ -26,7 +24,7 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # Check if all required parameters are set
-if [[ -z "$EXPERIMENT_DIR" || -z "$NB_WORKERS" || -z "$BATCH_SIZE" || -z "$NB_AGENTS" || -z "$NB_MACHINES" ]]; then
+if [[ -z "$EXPERIMENT_DIR" || -z "$NB_WORKERS" || -z "$BATCH_SIZE" ]]; then
     echo "Error: Missing required parameters."
     usage
 fi
@@ -67,8 +65,6 @@ BASE_COMMAND="singularity run \
     $CONTAINER_FILE \
     --nb_workers $NB_WORKERS \
     --batch_size $BATCH_SIZE \
-    --nb_agents $NB_AGENTS \
-    --nb_machines $NB_MACHINES \
     --datasets_dir /datasets"  # The datasets folder is binded to /datasets.
 
 # Conditionally add 'srun' if using SLURM

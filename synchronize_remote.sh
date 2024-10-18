@@ -3,7 +3,7 @@ remote=$1
 if [[ "$remote" == "jean-zay" ]]; then
     rsync -avzP --info=progress2 \
     --exclude '\\.*'\
-    --exclude datasets\
+    --exclude decentralizepy_grid5000/datasets\
     --exclude attacks/my_results\
     --exclude assets\
     --exclude attacks/assets\
@@ -17,9 +17,8 @@ if [[ "$remote" == "jean-zay" ]]; then
     ../decentralizepy_grid5000 $remote:work/
 elif [[ "$remote" == "rennes" || "$remote" == "nancy" ]]; then
     rsync -avzP --info=progress2 \
-    --include '\*/decentralizepy/datasets/'\
     --exclude '\\.*' \
-    --exclude 'datasets/' \
+    --exclude 'decentralizepy_grid5000/datasets/' \
     --exclude 'attacks/my_results' \
     --exclude assets\
     --exclude 'attacks/assets/' \

@@ -58,7 +58,8 @@ def launch_experiment_wrapper(
         )
     except Exception as e:
         sys.stdout = sys.__stdout__
-        print(f"{name} got the following error:\n{e}\n{'-' * 20}")
+        e_str = str(e)
+        print(f"{name} got the following error:\n{e_str}\n{'-' * 20}")
         raise e
     sys.stdout = sys.__stdout__
     os.remove(log_file_path)
@@ -224,8 +225,10 @@ if __name__ == "__main__":
         # "variant": ["muffliato"],
         #
         # "avgsteps": ["10avgsteps"],
-        # "avgsteps": ["5avgsteps"],
-        "avgsteps": ["1avgsteps"],
+        # "avgsteps": ["3avgsteps", "2avgsteps", "1avgsteps"],
+        "avgsteps": ["5avgsteps"],
+        # "avgsteps": ["3avgsteps"],
+        # "avgsteps": ["1avgsteps"],
         # "avgsteps": [
         #     # "1avgsteps",
         #     # "5avgsteps",
@@ -243,12 +246,12 @@ if __name__ == "__main__":
             "4th",
             "2th",
             "1th",
-            # "0p25th",
-            # "0p5th",
-            # "0p75th",
-            # "2p5th",
-            # "3th",
-            # "3p5th",
+            "0p25th",
+            "0p5th",
+            "0p75th",
+            "2p5th",
+            "3th",
+            "3p5th",
         ],
         # "noise_level": ["128th", "64th", "32th", "16th", "8th", "4th", "2th", "1th"],
         # "noise_level": ["128th", "1th"],
@@ -267,27 +270,34 @@ if __name__ == "__main__":
         "random_seed": ["seed90"],  # CIFAR10
         # "random_seed": ["seed1234"],  # MovieLens
         #
-        # "graph_degree": ["degree6"],
-        "graph_degree": ["degree4"],
+        "graph_degree": ["degree6"],
+        # "graph_degree": ["degree4"],
         # "graph_degree": ["degree5"],
         #
-        # "model_class": ["LeNet"],  # For CIFAR10
-        "model_class": ["RNET"],  # FEMNIST
-        # "model_class": ["CNN"],
+        "model_class": ["LeNet"],  # For CIFAR10
+        # "model_class": ["ResNet8"],  # For CIFAR10
+        # "model_class": ["RNET"],  # FEMNIST
+        # "model_class": ["GN_RNET"],  # FEMNIST
+        # "model_class": ["CNN"],   # FEMNIST
         # "model_class": ["MatrixFactorization"],  # For MovieLens
         #
         # "lr": ["lr0.05", "lr0.01", "lr0.10"],
         # "lr": ["lr0.05", "lr0.01", "lr0.10", "lr0.5", "lr0.075", "lr1.0"],
         # "lr": ["lr0.075"],  # MovieLens
-        # "lr": ["lr0.05"],  # For CIFAR10
+        "lr": ["lr0.05"],  # For CIFAR10
         # "lr": ["lr0.01"],  # FEMNIST
         #
         # "batchsize": ["batchsize32"],  # CIFAR10, MovieLens
         # "batchsize": ["batchsize128"],  # FEMNIST
         # "batchsize": ["batchsize512", "batchsize1024", "batchsize2048"],
         #
-        # Uncomment this for MovieLens?
-        # "rounds": ["5rounds", "3rounds", "2rounds", "1rounds"],
+        # Comment this for MovieLens? It's full descent in this case.
+        "rounds": [
+            # "5rounds",
+            "3rounds",
+            # "2rounds",
+            # "1rounds",
+        ],
         # "rounds": ["20rounds", "10rounds"],
         # "rounds": ["3rounds"],  # CIFAR10, FEMNIST
         # "rounds": ["1rounds"],

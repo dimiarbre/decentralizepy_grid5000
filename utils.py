@@ -70,6 +70,8 @@ def read_ini(file_path: str, verbose=False) -> LocalConfig:
 
 model_estimation = {  # Model size in GB
     "RNET": 12 / 1000,  # 12 MB in GB.
+    "GN_RNET": 12 / 1000,  # 12 MB in GB.
+    "ResNet8": 20 / 1000,  # 20 MB in GB
     "LeNet": 360 / (1000 * 1000),  # 360 kB
     # NB: For MovieLens, the size can vary depending on the data split.
     "MatrixFactorization": 1000 / (1000 * 1000),  # 1000 kB.
